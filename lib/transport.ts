@@ -16,7 +16,7 @@ type ApiStation = {
 type ApiTrip = {
   vehicle_number?: string;
   vehicleNumber?: string;
-  trip?: string;
+  trip?: string | number;
   stations?: ApiStation[];
 };
 
@@ -35,8 +35,14 @@ function makeStopId(name: string): string {
     .replace(/^-|-$/g, "")}`;
 }
 
-function convertTrip(apiTrip: ApiTrip, index: number): TransportTrip | null {
-  if (!Array.isArray(apiTrip.stations) || apiTrip.stations.length === 0) {
+function convertTrip(
+  apiTrip: ApiTrip,
+  index: number
+): TransportTrip | null {
+  if (
+    !Array.isArray(apiTrip.stations) ||
+    apiTrip.stations.length === 0
+  ) {
     return null;
   }
 
@@ -60,7 +66,9 @@ function convertTrip(apiTrip: ApiTrip, index: number): TransportTrip | null {
         departureTime: station.departureTime ?? null,
       };
     })
-    .filter((stop): stop is ScheduledStop => stop !== null);
+    .filter(
+      (stop): stop is ScheduledStop => stop !== null
+    );
 
   if (stops.length < 2) {
     return null;
@@ -77,7 +85,10 @@ function convertTrip(apiTrip: ApiTrip, index: number): TransportTrip | null {
       apiTrip.vehicleNumber ||
       undefined,
 
-    serviceName: apiTrip.trip || undefined,
+    serviceName:
+      apiTrip.trip !== undefined
+        ? String(apiTrip.trip)
+        : undefined,
 
     operator: "Private Bus",
 
@@ -91,14 +102,21 @@ function convertTrip(apiTrip: ApiTrip, index: number): TransportTrip | null {
   };
 }
 
-export async function getPrivateBusTrips(): Promise<TransportTrip[]> {
-  /*
-   * We intentionally fetch the schedule source here rather than
-   * hard-coding buses into the application.
-   */
+export async function searchBuses(
+  from: string,
+  to: string
+): Promise<TransportSearchResult> {
+  const departure = encodeURIComponent(from.trim());
+  const destination = encodeURIComponent(to.trim());
+
+  const url =
+    `${API_BASE}/schedules` +
+    `?departure=${departure}` +
+    `&destination=${destination}` +
+    `&restrict=true`;
 
   try {
-    const response = await fetch(`${API_BASE}/schedules`, {
+    const response = await fetch(url, {
       headers: {
         Accept: "application/json",
       },
@@ -118,26 +136,24 @@ export async function getPrivateBusTrips(): Promise<TransportTrip[]> {
 
     const rawTrips: ApiTrip[] = Array.isArray(data)
       ? data
-      : Array.isArray(data?.data)
-        ? data.data
-        : Array.isArray(data?.schedules)
-          ? data.schedules
-          : [];
+      : [];
 
-    return rawTrips
+    const trips = rawTrips
       .map(convertTrip)
-      .filter((trip): trip is TransportTrip => trip !== null);
+      .filter(
+        (trip): trip is TransportTrip => trip !== null
+      );
+
+    return createSearchResult(from, to, trips);
   } catch (error) {
     console.error("Private bus source failed:", error);
-    return [];
+
+    return {
+      from,
+      to,
+      directJourneys: [],
+      connectingJourneys: [],
+      searchedAt: new Date().toISOString(),
+    };
   }
-}
-
-export async function searchBuses(
-  from: string,
-  to: string
-): Promise<TransportSearchResult> {
-  const trips = await getPrivateBusTrips();
-
-  return createSearchResult(from, to, trips);
 }
