@@ -39,6 +39,7 @@ type Journey = {
   transfers: number;
   departureTime?: string;
   arrivalTime?: string;
+  waitingTimeMinutes?: number;
   isLive?: boolean;
 };
 
@@ -480,12 +481,12 @@ export default function Home() {
               <div className="section-heading">
                 <h3>
                   {results.length > 0
-                    ? `${results.length} direct bus${
+                    ? `${results.length} upcoming direct bus${
                         results.length === 1
                           ? ""
                           : "es"
-                      } found`
-                    : "No direct buses found"}
+                      }`
+                    : "No upcoming direct buses found"}
                 </h3>
 
                 <p>
@@ -519,13 +520,13 @@ export default function Home() {
                     </div>
 
                     <strong>
-                      No direct bus found
+                      No upcoming direct bus found
                     </strong>
 
                     <p>
-                      We couldn't find a
-                      direct bus for this
-                      search yet.
+                      There may be no
+                      scheduled bus remaining
+                      for this route today.
                     </p>
                   </div>
                 )}
@@ -611,6 +612,18 @@ export default function Home() {
                             </small>
                           </div>
                         </div>
+
+                        {journey.waitingTimeMinutes !==
+                          undefined &&
+                          journey.waitingTimeMinutes >=
+                            0 && (
+                            <div className="journey-waiting">
+                              {journey.waitingTimeMinutes ===
+                              0
+                                ? "🟢 Leaving now"
+                                : `🟢 Leaves in ${journey.waitingTimeMinutes} min`}
+                            </div>
+                          )}
 
                         {journey.isLive && (
                           <div className="live-badge">
