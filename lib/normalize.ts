@@ -27,21 +27,16 @@ function stopMatches(
   );
 }
 
-/*
- * Convert schedule time such as:
- *
- * 02:30 pm
- * 5:40 PM
- * 17:40
- *
- * into minutes after midnight.
+/**
+ * Converts:
+ *  "2:30 pm" -> 870
+ *  "05:40 AM" -> 340
+ *  "17:40" -> 1060
  */
 function timeToMinutes(
   value: string | null | undefined
 ): number | null {
-  if (!value) {
-    return null;
-  }
+  if (!value) return null;
 
   const text = value
     .trim()
@@ -66,11 +61,9 @@ function timeToMinutes(
     }
   }
 
-  // 12-hour format: 5:40 pm
+  // 12-hour format: 2:30 pm / 2 pm / 02:30 PM
   const twelveHour =
-    text.match(
-      /^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/
-    );
+    text.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/);
 
   if (twelveHour) {
     let hour = Number(twelveHour[1]);
@@ -84,11 +77,9 @@ function timeToMinutes(
       minute <= 59
     ) {
       if (period === "am") {
-        if (hour === 12) {
-          hour = 0;
-        }
-      } else if (hour !== 12) {
-        hour += 12;
+        if (hour === 12) hour = 0;
+      } else {
+        if (hour !== 12) hour += 12;
       }
 
       return hour * 60 + minute;
@@ -98,35 +89,25 @@ function timeToMinutes(
   return null;
 }
 
-/*
- * Current time in Kerala / India.
- *
- * Vercel servers normally use UTC, so we explicitly
- * calculate the current Indian time.
+/**
+ * Current time in India.
  */
 function getCurrentIndiaMinutes(): number {
-  const formatter = new Intl.DateTimeFormat(
-    "en-IN",
-    {
-      timeZone: "Asia/Kolkata",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }
-  );
+  const formatter = new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 
-  const parts = formatter.formatToParts(
-    new Date()
-  );
+  const parts = formatter.formatToParts(new Date());
 
   const hour = Number(
-    parts.find((part) => part.type === "hour")
-      ?.value ?? "0"
+    parts.find((part) => part.type === "hour")?.value ?? "0"
   );
 
   const minute = Number(
-    parts.find((part) => part.type === "minute")
-      ?.value ?? "0"
+    parts.find((part) => part.type === "minute")?.value ?? "0"
   );
 
   return hour * 60 + minute;
@@ -172,23 +153,15 @@ function createDirectJourney(
   const departureMinutes =
     timeToMinutes(departureTime);
 
-  let waitingTimeMinutes:
-    | number
-    | undefined;
+  let waitingTimeMinutes: number | undefined;
 
-  /*
-   * Only keep buses that have not departed yet.
-   *
-   * We deliberately allow a small 1-minute tolerance
-   * because the user may search exactly at departure time.
-   */
+  let isPast = false;
+
   if (departureMinutes !== null) {
     waitingTimeMinutes =
       departureMinutes - currentMinutes;
 
-    if (waitingTimeMinutes < -1) {
-      return null;
-    }
+    isPast = waitingTimeMinutes < 0;
   }
 
   const segment: JourneySegment = {
@@ -199,17 +172,15 @@ function createDirectJourney(
 
   return {
     segments: [segment],
-
     transfers: 0,
-
     departureTime,
-
     arrivalTime,
-
     waitingTimeMinutes,
-
     isLive: trip.isLive ?? false,
-  };
+
+    // Extra information used by the UI.
+    isPast,
+  } as Journey;
 }
 
 export function findDirectJourneys(
@@ -219,17 +190,29 @@ export function findDirectJourneys(
 ): Journey[] {
   return trips
     .map((trip) =>
-      createDirectJourney(
-        trip,
-        from,
-        to
-      )
+      createDirectJourney(trip, from, to)
     )
     .filter(
       (journey): journey is Journey =>
         journey !== null
     )
     .sort((a, b) => {
+      const aPast =
+        (a as Journey & { isPast?: boolean }).isPast
+          ? 1
+          : 0;
+
+      const bPast =
+        (b as Journey & { isPast?: boolean }).isPast
+          ? 1
+          : 0;
+
+      // Upcoming buses first.
+      if (aPast !== bPast) {
+        return aPast - bPast;
+      }
+
+      // Then earliest departure.
       const aWait =
         a.waitingTimeMinutes ??
         Number.MAX_SAFE_INTEGER;
@@ -248,19 +231,13 @@ export function createSearchResult(
   trips: TransportTrip[]
 ): TransportSearchResult {
   const directJourneys =
-    findDirectJourneys(
-      trips,
-      from,
-      to
-    );
+    findDirectJourneys(trips, from, to);
 
   return {
     from,
     to,
     directJourneys,
-
     connectingJourneys: [],
-
     searchedAt:
       new Date().toISOString(),
   };
