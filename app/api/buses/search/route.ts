@@ -28,17 +28,14 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const directBuses = await searchBuses(from, to);
+    const result = await searchBuses(from, to);
 
     return NextResponse.json({
       success: true,
-      query: {
-        from,
-        to,
-      },
-      directBuses,
-      connections: [],
-      totalDirectBuses: directBuses.length,
+      ...result,
+      totalDirectBuses: result.directJourneys.length,
+      totalConnectingJourneys:
+        result.connectingJourneys.length,
     });
   } catch (error) {
     console.error("Search error:", error);
