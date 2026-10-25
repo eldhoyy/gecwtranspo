@@ -71,6 +71,7 @@ export type Journey = {
   arrivalTime?: string;
 
   isLive?: boolean;
+  isPast?: boolean;
 };
 
 export type TransportSearchResult = {
