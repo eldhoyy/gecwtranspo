@@ -6,6 +6,7 @@ import type {
 } from "@/lib/types";
 
 import { createSearchResult } from "./normalize";
+import { resolveStopName } from "./stops";
 
 type ApiStation = {
   station?: string;
@@ -20,7 +21,8 @@ type ApiTrip = {
   stations?: ApiStation[];
 };
 
-const API_BASE = "https://busapi.amithv.xyz/api/v1";
+const API_BASE =
+  "https://busapi.amithv.xyz/api/v1";
 
 function normalizeName(value: string): string {
   return value
@@ -67,7 +69,8 @@ function convertTrip(
       };
     })
     .filter(
-      (stop): stop is ScheduledStop => stop !== null
+      (stop): stop is ScheduledStop =>
+        stop !== null
     );
 
   if (stops.length < 2) {
@@ -102,12 +105,47 @@ function convertTrip(
   };
 }
 
+function extractTrips(data: unknown): ApiTrip[] {
+  if (Array.isArray(data)) {
+    return data as ApiTrip[];
+  }
+
+  if (
+    data &&
+    typeof data === "object"
+  ) {
+    const object =
+      data as Record<string, unknown>;
+
+    const possibleKeys = [
+      "trips",
+      "data",
+      "schedules",
+      "results",
+    ];
+
+    for (const key of possibleKeys) {
+      if (Array.isArray(object[key])) {
+        return object[key] as ApiTrip[];
+      }
+    }
+  }
+
+  return [];
+}
+
 export async function searchBuses(
   from: string,
   to: string
 ): Promise<TransportSearchResult> {
-  const departure = encodeURIComponent(from.trim());
-  const destination = encodeURIComponent(to.trim());
+  const resolvedFrom = resolveStopName(from);
+  const resolvedTo = resolveStopName(to);
+
+  const departure =
+    encodeURIComponent(resolvedFrom);
+
+  const destination =
+    encodeURIComponent(resolvedTo);
 
   const url =
     `${API_BASE}/schedules` +
@@ -132,28 +170,50 @@ export async function searchBuses(
       );
     }
 
-    const data = await response.json();
+    const data: unknown =
+      await response.json();
 
-    const rawTrips: ApiTrip[] = Array.isArray(data)
-      ? data
-      : [];
+    const rawTrips =
+      extractTrips(data);
 
     const trips = rawTrips
       .map(convertTrip)
       .filter(
-        (trip): trip is TransportTrip => trip !== null
+        (trip): trip is TransportTrip =>
+          trip !== null
       );
 
-    return createSearchResult(from, to, trips);
+    /*
+     * Use the canonical names here.
+     *
+     * Example:
+     *
+     * GECW / Thalapuzha
+     *        ↓
+     * THALAPUZHA
+     *
+     * This prevents the normalizer from rejecting
+     * a valid bus simply because the user used
+     * the GECW alias.
+     */
+    return createSearchResult(
+      resolvedFrom,
+      resolvedTo,
+      trips
+    );
   } catch (error) {
-    console.error("Private bus source failed:", error);
+    console.error(
+      "Private bus source failed:",
+      error
+    );
 
     return {
       from,
       to,
       directJourneys: [],
       connectingJourneys: [],
-      searchedAt: new Date().toISOString(),
+      searchedAt:
+        new Date().toISOString(),
     };
   }
 }
