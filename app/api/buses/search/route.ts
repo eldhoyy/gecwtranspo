@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { searchBuses } from "@/lib/transport";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -26,14 +27,28 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  return NextResponse.json({
-    success: true,
-    query: {
-      from,
-      to,
-    },
-    directBuses: [],
-    connections: [],
-    message: "Transport data integration is being connected.",
-  });
+  try {
+    const directBuses = await searchBuses(from, to);
+
+    return NextResponse.json({
+      success: true,
+      query: {
+        from,
+        to,
+      },
+      directBuses,
+      connections: [],
+      totalDirectBuses: directBuses.length,
+    });
+  } catch (error) {
+    console.error("Search error:", error);
+
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Unable to search transport data right now.",
+      },
+      { status: 500 }
+    );
+  }
 }
