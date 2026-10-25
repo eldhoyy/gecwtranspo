@@ -14,21 +14,31 @@ type ApiStation = {
   departureTime?: string | null;
 };
 
-type ApiTrip = {
-  vehicle_number?: string;
-  vehicleNumber?: string;
+type ApiSchedule = {
   trip?: string | number;
   stations?: ApiStation[];
 };
 
-const API_BASE =
-  "https://busapi.amithv.xyz/api/v1";
+type ApiBus = {
+  "Vehicle Number"?: string;
+  vehicle_number?: string;
+  route?: string[];
+  schedule?: ApiSchedule[];
+};
+
+type Dataset = {
+  busSchedules?: ApiBus[];
+};
+
+const DATASET_URL =
+  "https://raw.githubusercontent.com/amith-vp/Kerala-Private-Bus-Timing/main/wayanad.json";
 
 function normalizeName(value: string): string {
   return value
     .trim()
     .toLowerCase()
-    .replace(/\s+/g, " ");
+    .replace(/\s+/g, " ")
+    .replace(/[.,]/g, "");
 }
 
 function makeStopId(name: string): string {
@@ -37,18 +47,38 @@ function makeStopId(name: string): string {
     .replace(/^-|-$/g, "")}`;
 }
 
-function convertTrip(
-  apiTrip: ApiTrip,
+function stationMatches(
+  stationName: string,
+  requestedName: string
+): boolean {
+  const station = normalizeName(stationName);
+  const requested = normalizeName(requestedName);
+
+  return (
+    station === requested ||
+    station.includes(requested) ||
+    requested.includes(station)
+  );
+}
+
+function convertSchedule(
+  bus: ApiBus,
+  schedule: ApiSchedule,
   index: number
 ): TransportTrip | null {
   if (
-    !Array.isArray(apiTrip.stations) ||
-    apiTrip.stations.length === 0
+    !Array.isArray(schedule.stations) ||
+    schedule.stations.length < 2
   ) {
     return null;
   }
 
-  const stops: ScheduledStop[] = apiTrip.stations
+  const vehicleNumber =
+    bus["Vehicle Number"] ??
+    bus.vehicle_number ??
+    undefined;
+
+  const stops: ScheduledStop[] = schedule.stations
     .map((station, sequence) => {
       const name = station.station?.trim();
 
@@ -79,18 +109,14 @@ function convertTrip(
 
   return {
     id:
-      apiTrip.vehicle_number ||
-      apiTrip.vehicleNumber ||
-      `private-trip-${index}`,
+      vehicleNumber ??
+      `private-${index}-${schedule.trip ?? "trip"}`,
 
-    vehicleNumber:
-      apiTrip.vehicle_number ||
-      apiTrip.vehicleNumber ||
-      undefined,
+    vehicleNumber,
 
     serviceName:
-      apiTrip.trip !== undefined
-        ? String(apiTrip.trip)
+      schedule.trip !== undefined
+        ? `Trip ${schedule.trip}`
         : undefined,
 
     operator: "Private Bus",
@@ -105,33 +131,56 @@ function convertTrip(
   };
 }
 
-function extractTrips(data: unknown): ApiTrip[] {
-  if (Array.isArray(data)) {
-    return data as ApiTrip[];
-  }
+function convertDataset(
+  data: Dataset
+): TransportTrip[] {
+  const buses = Array.isArray(data.busSchedules)
+    ? data.busSchedules
+    : [];
 
-  if (
-    data &&
-    typeof data === "object"
-  ) {
-    const object =
-      data as Record<string, unknown>;
+  const trips: TransportTrip[] = [];
 
-    const possibleKeys = [
-      "trips",
-      "data",
-      "schedules",
-      "results",
-    ];
+  buses.forEach((bus, busIndex) => {
+    const schedules = Array.isArray(bus.schedule)
+      ? bus.schedule
+      : [];
 
-    for (const key of possibleKeys) {
-      if (Array.isArray(object[key])) {
-        return object[key] as ApiTrip[];
+    schedules.forEach((schedule, scheduleIndex) => {
+      const trip = convertSchedule(
+        bus,
+        schedule,
+        busIndex * 1000 + scheduleIndex
+      );
+
+      if (trip) {
+        trips.push(trip);
       }
-    }
-  }
+    });
+  });
 
-  return [];
+  return trips;
+}
+
+function findDirectTrips(
+  trips: TransportTrip[],
+  from: string,
+  to: string
+): TransportTrip[] {
+  return trips.filter((trip) => {
+    const fromIndex = trip.stops.findIndex((stop) =>
+      stationMatches(stop.stop.name, from)
+    );
+
+    const toIndex = trip.stops.findIndex((stop) =>
+      stationMatches(stop.stop.name, to)
+    );
+
+    return (
+      fromIndex !== -1 &&
+      toIndex !== -1 &&
+      fromIndex < toIndex
+    );
+  });
 }
 
 export async function searchBuses(
@@ -141,75 +190,52 @@ export async function searchBuses(
   const resolvedFrom = resolveStopName(from);
   const resolvedTo = resolveStopName(to);
 
-  const departure =
-    encodeURIComponent(resolvedFrom);
-
-  const destination =
-    encodeURIComponent(resolvedTo);
-
-  const url =
-    `${API_BASE}/schedules` +
-    `?departure=${departure}` +
-    `&destination=${destination}` +
-    `&restrict=true`;
-
   try {
-    const response = await fetch(url, {
+    const response = await fetch(DATASET_URL, {
       headers: {
         Accept: "application/json",
       },
-
       next: {
-        revalidate: 300,
+        revalidate: 3600,
       },
     });
 
     if (!response.ok) {
       throw new Error(
-        `Private bus API returned ${response.status}`
+        `Bus dataset returned ${response.status}`
       );
     }
 
-    const data: unknown =
-      await response.json();
+    const data: Dataset = await response.json();
 
-    const rawTrips =
-      extractTrips(data);
+    const trips = convertDataset(data);
 
-    const trips = rawTrips
-      .map(convertTrip)
-      .filter(
-        (trip): trip is TransportTrip =>
-          trip !== null
-      );
+    const directTrips = findDirectTrips(
+      trips,
+      resolvedFrom,
+      resolvedTo
+    );
 
-    /*
-     * Use the canonical names here.
-     *
-     * Example:
-     *
-     * GECW / Thalapuzha
-     *        ↓
-     * THALAPUZHA
-     *
-     * This prevents the normalizer from rejecting
-     * a valid bus simply because the user used
-     * the GECW alias.
-     */
+    console.log(
+      `GECW Go search: ${resolvedFrom} -> ${resolvedTo}`,
+      `| total trips: ${trips.length}`,
+      `| direct trips: ${directTrips.length}`
+    );
+
     return createSearchResult(
       resolvedFrom,
       resolvedTo,
-      trips
+      directTrips
     );
   } catch (error) {
     console.error(
-      "Private bus source failed:",
+      "Bus dataset failed:",
       error
     );
 
     return {
-      from,
-      to,
+      from: resolvedFrom,
+      to: resolvedTo,
       directJourneys: [],
       connectingJourneys: [],
       searchedAt:
