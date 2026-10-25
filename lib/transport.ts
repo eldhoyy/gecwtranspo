@@ -5,7 +5,7 @@ import type {
   TransportTrip,
 } from "@/lib/types";
 
-import { createSearchResult } from "@/lib/normalize";
+import { createSearchResult } from "./normalize";
 
 type ApiStation = {
   station?: string;
