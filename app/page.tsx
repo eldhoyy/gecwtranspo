@@ -2,16 +2,39 @@
 
 import { useState } from "react";
 
-type BusStop = {
-  station: string;
+type ScheduledStop = {
+  stop: {
+    id: string;
+    name: string;
+  };
+  sequence: number;
   arrivalTime: string | null;
   departureTime: string | null;
 };
 
-type BusTrip = {
-  vehicleNumber: string;
-  trip: string;
-  stations: BusStop[];
+type TransportTrip = {
+  id: string;
+  vehicleNumber?: string;
+  serviceName?: string;
+  operator?: string;
+  mode: string;
+  source: string;
+  stops: ScheduledStop[];
+  isLive?: boolean;
+};
+
+type JourneySegment = {
+  trip: TransportTrip;
+  from: ScheduledStop;
+  to: ScheduledStop;
+};
+
+type Journey = {
+  segments: JourneySegment[];
+  transfers: number;
+  departureTime?: string;
+  arrivalTime?: string;
+  isLive?: boolean;
 };
 
 const quickRoutes = [
@@ -27,14 +50,19 @@ export default function Home() {
   const [transport, setTransport] = useState("Bus");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  const [results, setResults] = useState<BusTrip[]>([]);
+  const [results, setResults] = useState<Journey[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState("");
 
-  const searchRoute = async (searchFrom = from, searchTo = to) => {
+  const searchRoute = async (
+    searchFrom = from,
+    searchTo = to
+  ) => {
     if (!searchFrom.trim() || !searchTo.trim()) {
-      setError("Please enter both your starting point and destination.");
+      setError(
+        "Please enter both your starting point and destination."
+      );
       return;
     }
 
@@ -56,16 +84,21 @@ export default function Home() {
         throw new Error(data.error || "Search failed.");
       }
 
-      setResults(data.directBuses || []);
+      setResults(data.directJourneys || []);
     } catch (err) {
       console.error(err);
-      setError("Unable to find buses right now. Please try again.");
+      setError(
+        "Unable to find buses right now. Please try again."
+      );
     } finally {
       setLoading(false);
     }
   };
 
-  const useQuickRoute = (routeFrom: string, routeTo: string) => {
+  const useQuickRoute = (
+    routeFrom: string,
+    routeTo: string
+  ) => {
     setTransport("Bus");
     setFrom(routeFrom);
     setTo(routeTo);
@@ -78,16 +111,6 @@ export default function Home() {
     searchRoute(routeFrom, routeTo);
   };
 
-  const getStop = (trip: BusTrip, place: string) => {
-    return (
-      trip.stations.find(
-        (stop) =>
-          stop.station.toLowerCase().includes(place.toLowerCase()) ||
-          place.toLowerCase().includes(stop.station.toLowerCase())
-      ) || null
-    );
-  };
-
   return (
     <main className="gcw-page">
       <header className="gcw-header">
@@ -96,7 +119,9 @@ export default function Home() {
 
           <div>
             <h1>GECW Go</h1>
-            <p>Government Engineering College Wayanad</p>
+            <p>
+              Government Engineering College Wayanad
+            </p>
           </div>
         </div>
       </header>
@@ -129,8 +154,9 @@ export default function Home() {
             </h2>
 
             <p>
-              Find buses and simple connections from GECW, nearby stops,
-              towns and destinations across Kerala.
+              Find buses and simple connections from GECW,
+              nearby stops, towns and destinations across
+              Kerala.
             </p>
 
             <div className="search-card">
@@ -139,7 +165,9 @@ export default function Home() {
                   <label>From</label>
                   <input
                     value={from}
-                    onChange={(e) => setFrom(e.target.value)}
+                    onChange={(e) =>
+                      setFrom(e.target.value)
+                    }
                     placeholder="Search any stop or place"
                   />
                 </div>
@@ -148,7 +176,9 @@ export default function Home() {
                   <label>To</label>
                   <input
                     value={to}
-                    onChange={(e) => setTo(e.target.value)}
+                    onChange={(e) =>
+                      setTo(e.target.value)
+                    }
                     placeholder="Where are you going?"
                   />
                 </div>
@@ -158,11 +188,17 @@ export default function Home() {
                   onClick={() => searchRoute()}
                   disabled={loading}
                 >
-                  {loading ? "Searching..." : "Find Buses"}
+                  {loading
+                    ? "Searching..."
+                    : "Find Buses"}
                 </button>
               </div>
 
-              {error && <p className="search-error">{error}</p>}
+              {error && (
+                <p className="search-error">
+                  {error}
+                </p>
+              )}
             </div>
           </>
         ) : (
@@ -189,25 +225,39 @@ export default function Home() {
           <section className="gcw-section">
             <div className="section-heading">
               <h3>Quick GECW Routes</h3>
-              <p>Common journeys students make from and around campus.</p>
+              <p>
+                Common journeys students make from and
+                around campus.
+              </p>
             </div>
 
             <div className="quick-routes">
-              {quickRoutes.map(([routeFrom, routeTo], index) => (
-                <button
-                  key={index}
-                  className="route-card"
-                  onClick={() => useQuickRoute(routeFrom, routeTo)}
-                >
-                  <div className="route-icon">🚌</div>
+              {quickRoutes.map(
+                ([routeFrom, routeTo], index) => (
+                  <button
+                    key={index}
+                    className="route-card"
+                    onClick={() =>
+                      useQuickRoute(
+                        routeFrom,
+                        routeTo
+                      )
+                    }
+                  >
+                    <div className="route-icon">
+                      🚌
+                    </div>
 
-                  <strong>
-                    {routeFrom} → {routeTo}
-                  </strong>
+                    <strong>
+                      {routeFrom} → {routeTo}
+                    </strong>
 
-                  <span>Search buses for this route</span>
-                </button>
-              ))}
+                    <span>
+                      Search buses for this route
+                    </span>
+                  </button>
+                )
+              )}
             </div>
           </section>
 
@@ -217,7 +267,9 @@ export default function Home() {
                 <h3>
                   {results.length > 0
                     ? `${results.length} direct bus${
-                        results.length === 1 ? "" : "es"
+                        results.length === 1
+                          ? ""
+                          : "es"
                       } found`
                     : "No direct buses found"}
                 </h3>
@@ -229,69 +281,113 @@ export default function Home() {
 
               {loading && (
                 <div className="result-empty">
-                  <div className="result-icon">🚌</div>
-                  <strong>Searching transport data...</strong>
-                  <p>Checking available bus routes.</p>
+                  <div className="result-icon">
+                    🚌
+                  </div>
+
+                  <strong>
+                    Searching transport data...
+                  </strong>
+
+                  <p>
+                    Checking available bus routes.
+                  </p>
                 </div>
               )}
 
               {!loading && results.length === 0 && (
                 <div className="result-empty">
-                  <div className="result-icon">🔎</div>
-                  <strong>No direct bus found</strong>
+                  <div className="result-icon">
+                    🔎
+                  </div>
+
+                  <strong>
+                    No direct bus found
+                  </strong>
+
                   <p>
-                    We couldn't find a direct bus for this search yet.
-                    Transfer planning will be added next.
+                    We couldn't find a direct bus for
+                    this search yet. Transfer planning
+                    will be added next.
                   </p>
                 </div>
               )}
 
               {!loading &&
-                results.map((trip, index) => {
-                  const fromStop = getStop(trip, from);
-                  const toStop = getStop(trip, to);
+                results.map((journey, index) => {
+                  const segment =
+                    journey.segments[0];
+
+                  if (!segment) {
+                    return null;
+                  }
+
+                  const bus = segment.trip;
 
                   return (
-                    <div className="bus-result" key={`${trip.vehicleNumber}-${index}`}>
+                    <div
+                      className="bus-result"
+                      key={`${bus.id}-${index}`}
+                    >
                       <div className="bus-result-top">
-                        <div>
-                          <span className="direct-badge">
-                            DIRECT BUS
-                          </span>
+                        <span className="direct-badge">
+                          DIRECT BUS
+                        </span>
 
-                          <h4>
-                            🚌 {trip.vehicleNumber || "Bus"}
-                          </h4>
+                        <h4>
+                          🚌{" "}
+                          {bus.vehicleNumber ||
+                            "Bus"}
+                        </h4>
 
-                          <p>{trip.trip || "Scheduled service"}</p>
-                        </div>
+                        <p>
+                          {bus.serviceName ||
+                            "Scheduled service"}
+                        </p>
                       </div>
 
                       <div className="journey-times">
                         <div>
-                          <span>Departure</span>
+                          <span>
+                            Departure
+                          </span>
+
                           <strong>
-                            {fromStop?.departureTime ||
-                              fromStop?.arrivalTime ||
+                            {journey.departureTime ||
                               "—"}
                           </strong>
-                          <small>{fromStop?.station || from}</small>
+
+                          <small>
+                            {segment.from.stop
+                              .name}
+                          </small>
                         </div>
 
                         <div className="journey-line">
-                          <span>→</span>
+                          →
                         </div>
 
                         <div>
-                          <span>Arrival</span>
+                          <span>
+                            Arrival
+                          </span>
+
                           <strong>
-                            {toStop?.arrivalTime ||
-                              toStop?.departureTime ||
+                            {journey.arrivalTime ||
                               "—"}
                           </strong>
-                          <small>{toStop?.station || to}</small>
+
+                          <small>
+                            {segment.to.stop.name}
+                          </small>
                         </div>
                       </div>
+
+                      {journey.isLive && (
+                        <div className="live-badge">
+                          ● LIVE
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -303,36 +399,54 @@ export default function Home() {
       <section className="gcw-section">
         <div className="section-heading">
           <h3>More ways to travel</h3>
-          <p>Local transport options we plan to bring together.</p>
+          <p>
+            Local transport options we plan to bring
+            together.
+          </p>
         </div>
 
         <div className="future-grid">
           <div className="future-card">
-            <span className="future-badge">Coming soon</span>
-            <h4>🛺 Verified Auto Network</h4>
+            <span className="future-badge">
+              Coming soon
+            </span>
+
+            <h4>
+              🛺 Verified Auto Network
+            </h4>
+
             <p>
-              Find trusted local auto drivers around GECW, Thalapuzha and
-              Mananthavady.
+              Find trusted local auto drivers around
+              GECW, Thalapuzha and Mananthavady.
             </p>
           </div>
 
           <div className="future-card">
-            <span className="future-badge">Coming soon</span>
-            <h4>🚙 Local Jeep Network</h4>
+            <span className="future-badge">
+              Coming soon
+            </span>
+
+            <h4>
+              🚙 Local Jeep Network
+            </h4>
+
             <p>
-              A student-friendly directory for local jeep services when
-              you need an alternative to waiting for a bus.
+              A student-friendly directory for local
+              jeep services when you need an
+              alternative to waiting for a bus.
             </p>
           </div>
         </div>
       </section>
 
       <footer className="gcw-footer">
-        Bus timings and route information are provided for student
-        convenience and may change due to traffic, operational changes,
-        holidays, weather or other circumstances.
+        Bus timings and route information are provided
+        for student convenience and may change due to
+        traffic, operational changes, holidays, weather
+        or other circumstances.
         <br />
-        Please verify important journeys before travelling.
+        Please verify important journeys before
+        travelling.
       </footer>
     </main>
   );
