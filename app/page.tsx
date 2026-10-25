@@ -1,6 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
+import {
+  searchStops,
+  type SearchStop,
+} from "../lib/stops";
 
 type ScheduledStop = {
   stop: {
@@ -38,30 +43,188 @@ type Journey = {
 };
 
 const quickRoutes = [
-  ["GECW / Thalapuzha", "Mananthavady"],
-  ["Mananthavady", "GECW / Thalapuzha"],
-  ["GECW / Thalapuzha", "Sulthan Bathery"],
-  ["Sulthan Bathery", "GECW / Thalapuzha"],
-  ["GECW / Thalapuzha", "Kannur"],
-  ["GECW / Thalapuzha", "Thalassery"],
+  ["THALAPUZHA", "MANANTHAVADY"],
+  ["MANANTHAVADY", "THALAPUZHA"],
+  ["THALAPUZHA", "SULTHAN BATHERY"],
+  ["SULTHAN BATHERY", "THALAPUZHA"],
+  ["THALAPUZHA", "KANNUR"],
+  ["THALAPUZHA", "THALASSERY"],
 ];
 
+function LocationInput({
+  label,
+  value,
+  placeholder,
+  onChange,
+  onSelect,
+}: {
+  label: string;
+  value: string;
+  placeholder: string;
+  onChange: (value: string) => void;
+  onSelect: (stop: SearchStop) => void;
+}) {
+  const [suggestions, setSuggestions] =
+    useState<SearchStop[]>([]);
+
+  const [showSuggestions, setShowSuggestions] =
+    useState(false);
+
+  const wrapperRef =
+    useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleOutsideClick = (
+      event: MouseEvent
+    ) => {
+      if (
+        wrapperRef.current &&
+        !wrapperRef.current.contains(
+          event.target as Node
+        )
+      ) {
+        setShowSuggestions(false);
+      }
+    };
+
+    document.addEventListener(
+      "mousedown",
+      handleOutsideClick
+    );
+
+    return () => {
+      document.removeEventListener(
+        "mousedown",
+        handleOutsideClick
+      );
+    };
+  }, []);
+
+  const handleChange = (
+    nextValue: string
+  ) => {
+    onChange(nextValue);
+
+    const matches =
+      searchStops(nextValue);
+
+    setSuggestions(matches);
+    setShowSuggestions(true);
+  };
+
+  const handleFocus = () => {
+    const matches =
+      searchStops(value);
+
+    setSuggestions(matches);
+    setShowSuggestions(true);
+  };
+
+  const handleSelect = (
+    stop: SearchStop
+  ) => {
+    onSelect(stop);
+    setShowSuggestions(false);
+  };
+
+  return (
+    <div
+      className="search-field location-field"
+      ref={wrapperRef}
+    >
+      <label>{label}</label>
+
+      <input
+        value={value}
+        onChange={(event) =>
+          handleChange(event.target.value)
+        }
+        onFocus={handleFocus}
+        placeholder={placeholder}
+        autoComplete="off"
+      />
+
+      {showSuggestions &&
+        suggestions.length > 0 && (
+          <div className="location-suggestions">
+            {suggestions.map((stop) => (
+              <button
+                type="button"
+                className="location-suggestion"
+                key={stop.id}
+                onMouseDown={(event) =>
+                  event.preventDefault()
+                }
+                onClick={() =>
+                  handleSelect(stop)
+                }
+              >
+                <span className="suggestion-icon">
+                  📍
+                </span>
+
+                <span>
+                  <strong>
+                    {stop.name}
+                  </strong>
+
+                  {stop.aliases &&
+                    stop.aliases.length > 0 && (
+                      <small>
+                        {stop.aliases[0]}
+                      </small>
+                    )}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+    </div>
+  );
+}
+
 export default function Home() {
-  const [transport, setTransport] = useState("Bus");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const [results, setResults] = useState<Journey[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [searched, setSearched] = useState(false);
-  const [error, setError] = useState("");
+  const [transport, setTransport] =
+    useState("Bus");
+
+  const [from, setFrom] =
+    useState("");
+
+  const [to, setTo] =
+    useState("");
+
+  const [results, setResults] =
+    useState<Journey[]>([]);
+
+  const [loading, setLoading] =
+    useState(false);
+
+  const [searched, setSearched] =
+    useState(false);
+
+  const [error, setError] =
+    useState("");
 
   const searchRoute = async (
     searchFrom = from,
     searchTo = to
   ) => {
-    if (!searchFrom.trim() || !searchTo.trim()) {
+    if (
+      !searchFrom.trim() ||
+      !searchTo.trim()
+    ) {
       setError(
-        "Please enter both your starting point and destination."
+        "Please select both your starting point and destination."
+      );
+      return;
+    }
+
+    if (
+      searchFrom.trim().toLowerCase() ===
+      searchTo.trim().toLowerCase()
+    ) {
+      setError(
+        "Starting point and destination cannot be the same."
       );
       return;
     }
@@ -75,18 +238,30 @@ export default function Home() {
       const response = await fetch(
         `/api/buses/search?from=${encodeURIComponent(
           searchFrom
-        )}&to=${encodeURIComponent(searchTo)}`
+        )}&to=${encodeURIComponent(
+          searchTo
+        )}`
       );
 
-      const data = await response.json();
+      const data =
+        await response.json();
 
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || "Search failed.");
+      if (
+        !response.ok ||
+        !data.success
+      ) {
+        throw new Error(
+          data.error ||
+            "Search failed."
+        );
       }
 
-      setResults(data.directJourneys || []);
+      setResults(
+        data.directJourneys || []
+      );
     } catch (err) {
       console.error(err);
+
       setError(
         "Unable to find buses right now. Please try again."
       );
@@ -108,19 +283,26 @@ export default function Home() {
       behavior: "smooth",
     });
 
-    searchRoute(routeFrom, routeTo);
+    searchRoute(
+      routeFrom,
+      routeTo
+    );
   };
 
   return (
     <main className="gcw-page">
       <header className="gcw-header">
         <div className="gcw-brand">
-          <div className="gcw-logo">G</div>
+          <div className="gcw-logo">
+            G
+          </div>
 
           <div>
             <h1>GECW Go</h1>
+
             <p>
-              Government Engineering College Wayanad
+              Government Engineering College
+              Wayanad
             </p>
           </div>
         </div>
@@ -129,16 +311,32 @@ export default function Home() {
       <section className="gcw-hero">
         <div className="transport-selector">
           {[
-            { name: "Bus", icon: "🚌" },
-            { name: "Auto", icon: "🛺" },
-            { name: "Jeep", icon: "🚙" },
+            {
+              name: "Bus",
+              icon: "🚌",
+            },
+            {
+              name: "Auto",
+              icon: "🛺",
+            },
+            {
+              name: "Jeep",
+              icon: "🚙",
+            },
           ].map((item) => (
             <button
+              type="button"
               key={item.name}
               className={`transport-option ${
-                transport === item.name ? "active" : ""
+                transport === item.name
+                  ? "active"
+                  : ""
               }`}
-              onClick={() => setTransport(item.name)}
+              onClick={() =>
+                setTransport(
+                  item.name
+                )
+              }
             >
               {item.icon} {item.name}
             </button>
@@ -150,42 +348,46 @@ export default function Home() {
             <h2>
               Find your route.
               <br />
-              <span>Make your journey.</span>
+              <span>
+                Make your journey.
+              </span>
             </h2>
 
             <p>
-              Find buses and simple connections from GECW,
-              nearby stops, towns and destinations across
-              Kerala.
+              Find buses and simple
+              connections from GECW,
+              nearby stops, towns and
+              destinations across Kerala.
             </p>
 
             <div className="search-card">
               <div className="search-fields">
-                <div className="search-field">
-                  <label>From</label>
-                  <input
-                    value={from}
-                    onChange={(e) =>
-                      setFrom(e.target.value)
-                    }
-                    placeholder="Search any stop or place"
-                  />
-                </div>
+                <LocationInput
+                  label="From"
+                  value={from}
+                  onChange={setFrom}
+                  onSelect={(stop) =>
+                    setFrom(stop.name)
+                  }
+                  placeholder="Search any stop or place"
+                />
 
-                <div className="search-field">
-                  <label>To</label>
-                  <input
-                    value={to}
-                    onChange={(e) =>
-                      setTo(e.target.value)
-                    }
-                    placeholder="Where are you going?"
-                  />
-                </div>
+                <LocationInput
+                  label="To"
+                  value={to}
+                  onChange={setTo}
+                  onSelect={(stop) =>
+                    setTo(stop.name)
+                  }
+                  placeholder="Where are you going?"
+                />
 
                 <button
+                  type="button"
                   className="find-button"
-                  onClick={() => searchRoute()}
+                  onClick={() =>
+                    searchRoute()
+                  }
                   disabled={loading}
                 >
                   {loading
@@ -208,7 +410,9 @@ export default function Home() {
                 ? "Need an auto?"
                 : "Need a local jeep?"}
               <br />
-              <span>We're building it.</span>
+              <span>
+                We're building it.
+              </span>
             </h2>
 
             <p>
@@ -224,17 +428,25 @@ export default function Home() {
         <>
           <section className="gcw-section">
             <div className="section-heading">
-              <h3>Quick GECW Routes</h3>
+              <h3>
+                Quick GECW Routes
+              </h3>
+
               <p>
-                Common journeys students make from and
-                around campus.
+                Common journeys students
+                make from and around
+                campus.
               </p>
             </div>
 
             <div className="quick-routes">
               {quickRoutes.map(
-                ([routeFrom, routeTo], index) => (
+                (
+                  [routeFrom, routeTo],
+                  index
+                ) => (
                   <button
+                    type="button"
                     key={index}
                     className="route-card"
                     onClick={() =>
@@ -249,11 +461,13 @@ export default function Home() {
                     </div>
 
                     <strong>
-                      {routeFrom} → {routeTo}
+                      {routeFrom} →{" "}
+                      {routeTo}
                     </strong>
 
                     <span>
-                      Search buses for this route
+                      Search buses for
+                      this route
                     </span>
                   </button>
                 )
@@ -286,111 +500,127 @@ export default function Home() {
                   </div>
 
                   <strong>
-                    Searching transport data...
+                    Searching transport
+                    data...
                   </strong>
 
                   <p>
-                    Checking available bus routes.
-                  </p>
-                </div>
-              )}
-
-              {!loading && results.length === 0 && (
-                <div className="result-empty">
-                  <div className="result-icon">
-                    🔎
-                  </div>
-
-                  <strong>
-                    No direct bus found
-                  </strong>
-
-                  <p>
-                    We couldn't find a direct bus for
-                    this search yet. Transfer planning
-                    will be added next.
+                    Checking available
+                    bus routes.
                   </p>
                 </div>
               )}
 
               {!loading &&
-                results.map((journey, index) => {
-                  const segment =
-                    journey.segments[0];
-
-                  if (!segment) {
-                    return null;
-                  }
-
-                  const bus = segment.trip;
-
-                  return (
-                    <div
-                      className="bus-result"
-                      key={`${bus.id}-${index}`}
-                    >
-                      <div className="bus-result-top">
-                        <span className="direct-badge">
-                          DIRECT BUS
-                        </span>
-
-                        <h4>
-                          🚌{" "}
-                          {bus.vehicleNumber ||
-                            "Bus"}
-                        </h4>
-
-                        <p>
-                          {bus.serviceName ||
-                            "Scheduled service"}
-                        </p>
-                      </div>
-
-                      <div className="journey-times">
-                        <div>
-                          <span>
-                            Departure
-                          </span>
-
-                          <strong>
-                            {journey.departureTime ||
-                              "—"}
-                          </strong>
-
-                          <small>
-                            {segment.from.stop
-                              .name}
-                          </small>
-                        </div>
-
-                        <div className="journey-line">
-                          →
-                        </div>
-
-                        <div>
-                          <span>
-                            Arrival
-                          </span>
-
-                          <strong>
-                            {journey.arrivalTime ||
-                              "—"}
-                          </strong>
-
-                          <small>
-                            {segment.to.stop.name}
-                          </small>
-                        </div>
-                      </div>
-
-                      {journey.isLive && (
-                        <div className="live-badge">
-                          ● LIVE
-                        </div>
-                      )}
+                results.length === 0 && (
+                  <div className="result-empty">
+                    <div className="result-icon">
+                      🔎
                     </div>
-                  );
-                })}
+
+                    <strong>
+                      No direct bus found
+                    </strong>
+
+                    <p>
+                      We couldn't find a
+                      direct bus for this
+                      search yet.
+                    </p>
+                  </div>
+                )}
+
+              {!loading &&
+                results.map(
+                  (
+                    journey,
+                    index
+                  ) => {
+                    const segment =
+                      journey.segments[0];
+
+                    if (!segment) {
+                      return null;
+                    }
+
+                    const bus =
+                      segment.trip;
+
+                    return (
+                      <div
+                        className="bus-result"
+                        key={`${bus.id}-${index}`}
+                      >
+                        <div className="bus-result-top">
+                          <span className="direct-badge">
+                            DIRECT BUS
+                          </span>
+
+                          <h4>
+                            🚌{" "}
+                            {bus.vehicleNumber ||
+                              "Bus"}
+                          </h4>
+
+                          <p>
+                            {bus.serviceName ||
+                              "Scheduled service"}
+                          </p>
+                        </div>
+
+                        <div className="journey-times">
+                          <div>
+                            <span>
+                              Departure
+                            </span>
+
+                            <strong>
+                              {journey.departureTime ||
+                                "—"}
+                            </strong>
+
+                            <small>
+                              {
+                                segment
+                                  .from.stop
+                                  .name
+                              }
+                            </small>
+                          </div>
+
+                          <div className="journey-line">
+                            →
+                          </div>
+
+                          <div>
+                            <span>
+                              Arrival
+                            </span>
+
+                            <strong>
+                              {journey.arrivalTime ||
+                                "—"}
+                            </strong>
+
+                            <small>
+                              {
+                                segment
+                                  .to.stop
+                                  .name
+                              }
+                            </small>
+                          </div>
+                        </div>
+
+                        {journey.isLive && (
+                          <div className="live-badge">
+                            ● LIVE
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+                )}
             </section>
           )}
         </>
@@ -398,10 +628,13 @@ export default function Home() {
 
       <section className="gcw-section">
         <div className="section-heading">
-          <h3>More ways to travel</h3>
+          <h3>
+            More ways to travel
+          </h3>
+
           <p>
-            Local transport options we plan to bring
-            together.
+            Local transport options we
+            plan to bring together.
           </p>
         </div>
 
@@ -416,8 +649,10 @@ export default function Home() {
             </h4>
 
             <p>
-              Find trusted local auto drivers around
-              GECW, Thalapuzha and Mananthavady.
+              Find trusted local auto
+              drivers around GECW,
+              Thalapuzha and
+              Mananthavady.
             </p>
           </div>
 
@@ -431,22 +666,23 @@ export default function Home() {
             </h4>
 
             <p>
-              A student-friendly directory for local
-              jeep services when you need an
-              alternative to waiting for a bus.
+              A student-friendly
+              directory for local jeep
+              services.
             </p>
           </div>
         </div>
       </section>
 
       <footer className="gcw-footer">
-        Bus timings and route information are provided
-        for student convenience and may change due to
-        traffic, operational changes, holidays, weather
-        or other circumstances.
+        Bus timings and route information
+        are provided for student convenience
+        and may change due to traffic,
+        operational changes, holidays,
+        weather or other circumstances.
         <br />
-        Please verify important journeys before
-        travelling.
+        Please verify important journeys
+        before travelling.
       </footer>
     </main>
   );
