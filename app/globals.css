@@ -1296,3 +1296,146 @@ html.dark-theme .transpo-footer-brand strong {
     align-self: flex-start;
   }
 }
+/* =========================
+   COMPACT QUICK ROUTES
+========================= */
+
+.quick-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.quick-route-card {
+  min-height: 82px;
+  padding: 10px;
+  gap: 10px;
+}
+
+.quick-route-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  font-size: 19px;
+}
+
+.quick-route-text strong {
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.quick-route-text span {
+  margin-top: 3px;
+  font-size: 10px;
+}
+
+/* =========================
+   BETTER TRAVEL SCENE
+========================= */
+
+.kerala-scene {
+  width: 300px;
+  height: 165px;
+  background: transparent;
+  border-radius: 20px;
+  overflow: hidden;
+}
+
+.kerala-scene svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.scene-bus {
+  animation: keralaBusTravel 8s linear infinite;
+}
+
+@keyframes keralaBusTravel {
+  0% {
+    transform: translateX(-130px);
+  }
+
+  100% {
+    transform: translateX(450px);
+  }
+}
+
+/* =========================
+   SMOOTH THEME TRANSITION
+========================= */
+
+html {
+  view-transition-name: root;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 0.4s;
+  animation-timing-function: ease-in-out;
+}
+
+.theme-toggle {
+  transition:
+    transform 0.25s ease,
+    background 0.25s ease,
+    color 0.25s ease;
+}
+
+.theme-toggle:active {
+  transform: scale(0.82) rotate(-15deg);
+}
+
+/* Keep two quick routes beside each other on phones */
+@media (max-width: 650px) {
+  .quick-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .quick-route-card {
+    min-height: 76px;
+    padding: 9px;
+  }
+
+  .quick-route-icon {
+    width: 34px;
+    height: 34px;
+    font-size: 17px;
+  }
+
+  .quick-route-text strong {
+    font-size: 11px;
+  }
+
+  .quick-route-text span {
+    font-size: 9px;
+  }
+
+  .kerala-scene {
+    width: 270px;
+    height: 145px;
+  }
+}
+
+@media (max-width: 470px) {
+  .quick-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .quick-route-card {
+    min-height: 72px;
+  }
+
+  .quick-route-text strong {
+    font-size: 10px;
+  }
+
+  .quick-route-text span {
+    display: none;
+  }
+
+  .kerala-scene {
+    width: 100%;
+    height: 145px;
+  }
+}
