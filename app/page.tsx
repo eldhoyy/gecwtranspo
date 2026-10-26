@@ -764,4 +764,98 @@ export default function Home() {
                           </div>
 
                           <div className="result-arrow">
+  →
+</div>
+
+<div>
+  <span>ARRIVAL</span>
+
+  <strong>
+    {journey.arrivalTime || "—"}
+  </strong>
+
+  <small>
+    {segment.to.stop.name}
+  </small>
+</div>
+</div>
+
+{!past &&
+  journey.waitingTimeMinutes !== undefined && (
+    <div className="leaves-banner">
+      🟢{" "}
+      {journey.waitingTimeMinutes === 0
+        ? "Leaving now"
+        : `Leaves in ${journey.waitingTimeMinutes} min`}
+    </div>
+  )}
+
+{past && (
+  <div className="departed-banner">
+    🔴 This bus has already departed
+  </div>
+)}
+</div>
+);
+})}
+</section>
+)}
+
+{/* DISCLAIMER */}
+<section className="disclaimer-card">
+  <div className="info-icon">i</div>
+
+  <p>
+    <strong>Disclaimer:</strong>{" "}
+    Bus timings are collected for student convenience.
+    Schedules may change because of traffic, holidays,
+    operational changes or other circumstances. Please
+    verify important journeys before travelling.
+  </p>
+</section>
+
+{/* FOOTER */}
+<section className="transpo-footer-brand">
+  <div className="footer-mark">
+    🚌
+  </div>
+
+  <div>
+    <strong>GECW Go</strong>
+
+    <span>
+      · Smart Campus Mobility for Government Engineering
+      College Wayanad
+    </span>
+
+    <small>
+      Student-focused transport information
+    </small>
+  </div>
+</section>
+</>
+) : (
+<section className="content-card coming-card">
+  <div className="coming-icon">
+    {transport === "Auto" ? "🛺" : "🚙"}
+  </div>
+
+  <span>COMING SOON</span>
+
+  <h2>
+    {transport === "Auto"
+      ? "Verified Auto Network"
+      : "Local Jeep Network"}
+  </h2>
+
+  <p>
+    We're working on bringing reliable local transport
+    information to GECW students.
+  </p>
+</section>
+)}
+</div>
+</main>
+);
+}
         
