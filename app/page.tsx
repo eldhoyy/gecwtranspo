@@ -212,6 +212,31 @@ function getBusType(
   return "Private Bus";
 }
 
+function formatTime(value?: string | null) {
+  if (!value) return "--:--";
+
+  return value
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b(am|pm)\b/i, (match) => match.toUpperCase());
+}
+
+function getJourneyStops(journey: Journey) {
+  const segment = journey.segments?.[0];
+
+  if (!segment) {
+    return {
+      from: "",
+      to: "",
+    };
+  }
+
+  return {
+    from: segment.from.stop.name,
+    to: segment.to.stop.name,
+  };
+}
+
 export default function Home() {
   const [transport, setTransport] = useState("Bus");
 
@@ -230,24 +255,16 @@ export default function Home() {
 
   const resultsRef = useRef<HTMLElement>(null);
 
-  /* =========================
-     LOAD THEME
-  ========================= */
-
   useEffect(() => {
     const savedTheme =
       window.localStorage.getItem("gecw-go-theme");
 
     if (savedTheme === "dark") {
       setDarkMode(true);
-      document.documentElement.classList.add(
-        "dark-theme"
-      );
+      document.documentElement.classList.add("dark-theme");
     } else if (savedTheme === "light") {
       setDarkMode(false);
-      document.documentElement.classList.remove(
-        "dark-theme"
-      );
+      document.documentElement.classList.remove("dark-theme");
     } else {
       const prefersDark = window.matchMedia(
         "(prefers-color-scheme: dark)"
@@ -256,16 +273,10 @@ export default function Home() {
       setDarkMode(prefersDark);
 
       if (prefersDark) {
-        document.documentElement.classList.add(
-          "dark-theme"
-        );
+        document.documentElement.classList.add("dark-theme");
       }
     }
   }, []);
-
-  /* =========================
-     CLOCK
-  ========================= */
 
   useEffect(() => {
     const updateClock = () => {
@@ -282,17 +293,10 @@ export default function Home() {
 
     updateClock();
 
-    const timer = window.setInterval(
-      updateClock,
-      1000
-    );
+    const timer = window.setInterval(updateClock, 1000);
 
     return () => window.clearInterval(timer);
   }, []);
-
-  /* =========================
-     WELCOME LANGUAGE ROTATION
-  ========================= */
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -305,10 +309,6 @@ export default function Home() {
     return () => window.clearInterval(timer);
   }, []);
 
-  /* =========================
-     SCROLL TO RESULTS
-  ========================= */
-
   useEffect(() => {
     if (!searched || loading) return;
 
@@ -317,14 +317,10 @@ export default function Home() {
         behavior: "smooth",
         block: "start",
       });
-    }, 200);
+    }, 250);
 
     return () => window.clearTimeout(timer);
   }, [searched, loading, results.length]);
-
-  /* =========================
-     THEME SWITCH
-  ========================= */
 
   const toggleTheme = () => {
     const nextTheme = !darkMode;
@@ -333,9 +329,7 @@ export default function Home() {
       setDarkMode(nextTheme);
 
       if (nextTheme) {
-        document.documentElement.classList.add(
-          "dark-theme"
-        );
+        document.documentElement.classList.add("dark-theme");
 
         window.localStorage.setItem(
           "gecw-go-theme",
@@ -361,8 +355,8 @@ export default function Home() {
       };
 
     if (
-      typeof documentWithTransition
-        .startViewTransition === "function"
+      typeof documentWithTransition.startViewTransition ===
+      "function"
     ) {
       documentWithTransition.startViewTransition(
         changeTheme
@@ -371,10 +365,6 @@ export default function Home() {
       changeTheme();
     }
   };
-
-  /* =========================
-     SEARCH
-  ========================= */
 
   const searchRoute = async (
     searchFrom = from,
@@ -437,18 +427,10 @@ export default function Home() {
     }
   };
 
-  /* =========================
-     SWAP
-  ========================= */
-
   const swapLocations = () => {
     setFrom(to);
     setTo(from);
   };
-
-  /* =========================
-     QUICK ROUTE
-  ========================= */
 
   const useQuickRoute = (
     routeFrom: string,
@@ -457,6 +439,7 @@ export default function Home() {
     setTransport("Bus");
     setFrom(routeFrom);
     setTo(routeTo);
+    setError("");
 
     setTimeout(() => {
       searchRoute(routeFrom, routeTo);
@@ -469,20 +452,16 @@ export default function Home() {
     <main className="transpo-page">
       <div className="transpo-shell">
 
-        {/* =================================
-            HEADER
-        ================================= */}
+        {/* HEADER */}
 
         <header className="transpo-header-card">
           <div className="transpo-brand-row">
-
             <div className="transpo-brand-mark">
               🚌
             </div>
 
             <div className="transpo-brand-text">
               <h1>GECW GO</h1>
-
               <p>
                 GECW · Smart Campus Mobility
               </p>
@@ -491,13 +470,10 @@ export default function Home() {
             <div className="transpo-brand-symbol">
               🎓
             </div>
-
           </div>
 
           <div className="transpo-header-bottom">
-
             <div className="live-clock">
-
               <button
                 type="button"
                 className="theme-toggle"
@@ -506,11 +482,6 @@ export default function Home() {
                   darkMode
                     ? "Switch to light theme"
                     : "Switch to dark theme"
-                }
-                title={
-                  darkMode
-                    ? "Light theme"
-                    : "Dark theme"
                 }
               >
                 {darkMode ? "☀" : "☾"}
@@ -521,11 +492,9 @@ export default function Home() {
               <strong>
                 {clock || "--:--:--"}
               </strong>
-
             </div>
 
             <div className="header-actions">
-
               <button
                 type="button"
                 className="login-button"
@@ -550,24 +519,17 @@ export default function Home() {
               >
                 ?
               </button>
-
             </div>
-
           </div>
         </header>
 
-        {/* =================================
-            TRANSPORT SELECTOR
-        ================================= */}
+        {/* TRANSPORT SELECTOR */}
 
         <section className="transport-tabs-card">
-
           <button
             type="button"
             className={`transport-tab ${
-              transport === "Bus"
-                ? "active"
-                : ""
+              transport === "Bus" ? "active" : ""
             }`}
             onClick={() => setTransport("Bus")}
           >
@@ -578,9 +540,7 @@ export default function Home() {
           <button
             type="button"
             className={`transport-tab-icon ${
-              transport === "Auto"
-                ? "active"
-                : ""
+              transport === "Auto" ? "active" : ""
             }`}
             onClick={() => setTransport("Auto")}
             aria-label="Auto"
@@ -591,9 +551,7 @@ export default function Home() {
           <button
             type="button"
             className={`transport-tab-icon ${
-              transport === "Jeep"
-                ? "active"
-                : ""
+              transport === "Jeep" ? "active" : ""
             }`}
             onClick={() => setTransport("Jeep")}
             aria-label="Jeep"
@@ -613,24 +571,14 @@ export default function Home() {
           >
             👤
           </button>
-
         </section>
-
-        {/* =================================
-            BUS SECTION
-        ================================= */}
 
         {transport === "Bus" ? (
           <>
-
-            {/* =================================
-                WELCOME
-            ================================= */}
+            {/* WELCOME */}
 
             <section className="welcome-card">
-
               <div className="welcome-copy">
-
                 <span className="welcome-small">
                   {welcome.language}
                 </span>
@@ -639,554 +587,598 @@ export default function Home() {
                   key={welcomeIndex}
                   className="welcome-message-animation"
                 >
-                  <h2>
-                    {welcome.title}
-                  </h2>
-
-                  <p>
-                    {welcome.subtitle}
-                  </p>
+                  <h2>{welcome.title}</h2>
+                  <p>{welcome.subtitle}</p>
                 </div>
-
               </div>
 
-              {/* KERALA COUNTRYSIDE ANIMATION */}
-
-              <div className="welcome-motion kerala-scene">
-
+              <div className="kerala-scene">
                 <svg
-                  viewBox="0 0 420 220"
+                  viewBox="0 0 360 190"
                   role="img"
-                  aria-label="GECW bus travelling through Kerala greenery"
+                  aria-label="Animated bus travelling through Kerala greenery"
                 >
-
-                  {/* Sky */}
-
+                  {/* sky */}
                   <rect
                     x="0"
                     y="0"
-                    width="420"
-                    height="220"
-                    rx="22"
-                    fill="#eaf7f0"
+                    width="360"
+                    height="190"
+                    fill="#dff4ff"
                   />
 
-                  {/* Sun */}
-
-                  <circle
-                    cx="350"
-                    cy="45"
-                    r="24"
-                    fill="#f5c84b"
-                    opacity="0.9"
-                  />
-
-                  {/* Hills */}
-
-                  <path
-                    d="M0 115 Q65 65 130 112 T260 105 T420 110 V150 H0Z"
-                    fill="#9acb91"
-                  />
-
-                  {/* Paddy field */}
-
-                  <path
-                    d="M0 120 H420 V176 H0Z"
-                    fill="#74b96b"
-                  />
-
-                  {/* Paddy field lines */}
-
-                  <path
-                    d="M0 132 H420"
-                    stroke="#a9d879"
-                    strokeWidth="3"
-                  />
-
-                  <path
-                    d="M0 148 H420"
-                    stroke="#a9d879"
-                    strokeWidth="3"
-                  />
-
-                  <path
-                    d="M0 164 H420"
-                    stroke="#a9d879"
-                    strokeWidth="3"
-                  />
-
-                  {/* Paddy plants */}
-
+                  {/* clouds */}
                   <g
-                    stroke="#4e9b55"
-                    strokeWidth="3"
-                    strokeLinecap="round"
+                    fill="#ffffff"
+                    opacity="0.9"
                   >
-                    <path d="M30 175 l-7 -13 M30 175 l7 -14" />
-                    <path d="M65 175 l-7 -14 M65 175 l8 -13" />
-                    <path d="M100 175 l-7 -14 M100 175 l8 -13" />
-                    <path d="M330 175 l-7 -14 M330 175 l8 -13" />
-                    <path d="M365 175 l-7 -14 M365 175 l8 -13" />
-                    <path d="M395 175 l-7 -14 M395 175 l8 -13" />
-                  </g>
-
-                  {/* Coconut tree left */}
-
-                  <g>
-                    <path
-                      d="M48 135 Q42 90 55 55"
-                      fill="none"
-                      stroke="#765137"
-                      strokeWidth="7"
+                    <ellipse
+                      cx="55"
+                      cy="35"
+                      rx="30"
+                      ry="12"
                     />
-
-                    <path
-                      d="
-                        M55 58 Q31 45 17 52
-                        M55 58 Q39 29 48 18
-                        M55 58 Q68 30 84 27
-                        M55 58 Q76 48 94 51
-                      "
-                      fill="none"
-                      stroke="#31834c"
-                      strokeWidth="6"
-                      strokeLinecap="round"
+                    <ellipse
+                      cx="83"
+                      cy="35"
+                      rx="22"
+                      ry="10"
+                    />
+                    <ellipse
+                      cx="295"
+                      cy="42"
+                      rx="34"
+                      ry="13"
                     />
                   </g>
 
-                  {/* Coconut tree right */}
-
-                  <g>
-                    <path
-                      d="M375 138 Q368 95 378 65"
-                      fill="none"
-                      stroke="#765137"
-                      strokeWidth="7"
-                    />
-
-                    <path
-                      d="
-                        M378 67 Q355 53 342 60
-                        M378 67 Q364 39 373 27
-                        M378 67 Q391 39 408 38
-                        M378 67 Q400 56 417 60
-                      "
-                      fill="none"
-                      stroke="#31834c"
-                      strokeWidth="6"
-                      strokeLinecap="round"
-                    />
-                  </g>
-
-                  {/* Road */}
-
+                  {/* hills */}
                   <path
-                    d="M0 174 H420 V220 H0Z"
-                    fill="#353535"
+                    d="M0 100 Q55 55 110 100 T220 100 T360 92 V145 H0Z"
+                    fill="#7fcf8b"
                   />
 
-                  {/* Road markings */}
-
                   <path
-                    d="M0 199 H420"
-                    stroke="#ffffff"
-                    strokeWidth="5"
-                    strokeLinecap="round"
-                    strokeDasharray="28 25"
+                    d="M0 112 Q70 75 140 112 T280 110 T360 105 V150 H0Z"
+                    fill="#55b86b"
                   />
 
-                  {/* Moving bus */}
+                  {/* paddy field */}
+                  <rect
+                    x="0"
+                    y="125"
+                    width="360"
+                    height="65"
+                    fill="#8fd35c"
+                  />
+
+                  <path
+                    d="M0 145 Q45 135 90 145 T180 145 T270 145 T360 145"
+                    fill="none"
+                    stroke="#6eb34b"
+                    strokeWidth="3"
+                  />
+
+                  <path
+                    d="M0 160 Q45 150 90 160 T180 160 T270 160 T360 160"
+                    fill="none"
+                    stroke="#6eb34b"
+                    strokeWidth="3"
+                  />
+
+                  {/* road */}
+                  <path
+                    d="M0 157 Q90 140 180 158 T360 150 L360 190 H0Z"
+                    fill="#686868"
+                  />
+
+                  <path
+                    d="M0 170 Q90 153 180 170 T360 162"
+                    fill="none"
+                    stroke="#f8e68a"
+                    strokeWidth="4"
+                    strokeDasharray="18 13"
+                  />
+
+                  {/* coconut tree 1 */}
+                  <g>
+                    <path
+                      d="M38 130 Q34 88 42 57"
+                      stroke="#795548"
+                      strokeWidth="7"
+                      fill="none"
+                    />
+
+                    <path
+                      d="M41 61 Q15 50 9 38"
+                      stroke="#2f8f46"
+                      strokeWidth="5"
+                    />
+
+                    <path
+                      d="M42 60 Q62 43 78 40"
+                      stroke="#2f8f46"
+                      strokeWidth="5"
+                    />
+
+                    <path
+                      d="M42 61 Q37 36 43 22"
+                      stroke="#2f8f46"
+                      strokeWidth="5"
+                    />
+                  </g>
+
+                  {/* coconut tree 2 */}
+                  <g>
+                    <path
+                      d="M310 135 Q315 92 307 64"
+                      stroke="#795548"
+                      strokeWidth="7"
+                      fill="none"
+                    />
+
+                    <path
+                      d="M308 68 Q286 52 275 50"
+                      stroke="#2f8f46"
+                      strokeWidth="5"
+                    />
+
+                    <path
+                      d="M308 68 Q332 49 350 50"
+                      stroke="#2f8f46"
+                      strokeWidth="5"
+                    />
+
+                    <path
+                      d="M308 68 Q306 43 313 29"
+                      stroke="#2f8f46"
+                      strokeWidth="5"
+                    />
+                  </g>
+
+                  {/* moving bus */}
 
                   <g className="scene-bus">
+                    <rect
+                      x="85"
+                      y="125"
+                      width="105"
+                      height="38"
+                      rx="7"
+                      fill="#e53935"
+                    />
 
                     <rect
-  x="0"
-  y="136"
-  width="116"
-  height="48"
-  rx="9"
-  fill="#e33b32"
-/>
+                      x="92"
+                      y="132"
+                      width="45"
+                      height="15"
+                      rx="3"
+                      fill="#bfe8ff"
+                    />
 
-<rect
-  x="5"
-  y="130"
-  width="106"
-  height="10"
-  rx="5"
-  fill="#c92f27"
-/>
+                    <rect
+                      x="141"
+                      y="132"
+                      width="39"
+                      height="15"
+                      rx="3"
+                      fill="#bfe8ff"
+                    />
 
-<rect
-  x="11"
-  y="145"
-  width="25"
-  height="18"
-  rx="3"
-  fill="#c5e9f2"
-/>
+                    <rect
+                      x="180"
+                      y="137"
+                      width="7"
+                      height="12"
+                      fill="#ffcc80"
+                    />
 
-<rect
-  x="42"
-  y="145"
-  width="25"
-  height="18"
-  rx="3"
-  fill="#c5e9f2"
-/>
+                    <circle
+                      cx="108"
+                      cy="164"
+                      r="8"
+                      fill="#222"
+                    />
 
-<rect
-  x="73"
-  y="145"
-  width="25"
-  height="18"
-  rx="3"
-  fill="#c5e9f2"
-/>
+                    <circle
+                      cx="167"
+                      cy="164"
+                      r="8"
+                      fill="#222"
+                    />
 
-<text
-  x="58"
-  y="139"
-  textAnchor="middle"
-  fontSize="7"
-  fontWeight="900"
-  fill="#ffffff"
->
-  GECW GO
-</text>
+                    <circle
+                      cx="108"
+                      cy="164"
+                      r="3"
+                      fill="#ddd"
+                    />
 
-<circle
-  cx="25"
-  cy="186"
-  r="10"
-  fill="#202020"
-/>
+                    <circle
+                      cx="167"
+                      cy="164"
+                      r="3"
+                      fill="#ddd"
+                    />
+                  </g>
+                </svg>
+              </div>
+            </section>
 
-<circle
-  cx="91"
-  cy="186"
-  r="10"
-  fill="#202020"
-/>
+            {/* QUICK ROUTES */}
 
-<circle
-  cx="25"
-  cy="186"
-  r="4"
-  fill="#999999"
-/>
+            <section className="section-block">
+              <div className="section-heading">
+                <div>
+                  <span className="section-eyebrow">
+                    START HERE
+                  </span>
 
-<circle
-  cx="91"
-  cy="186"
-  r="4"
-  fill="#999999"
-/>
+                  <h2>Quick GECW Routes</h2>
+                </div>
 
-</g>
+                <span className="route-count">
+                  {quickRoutes.length} routes
+                </span>
+              </div>
 
-</svg>
-</div>
-</section>
+              <div className="quick-grid">
+              {quickRoutes.map((route) => (
+                  <button
+                    type="button"
+                    className="quick-route-card"
+                    key={`${route.from}-${route.to}`}
+                    onClick={() =>
+                      useQuickRoute(
+                        route.from,
+                        route.to
+                      )
+                    }
+                  >
+                    <div className="quick-route-icon">
+                      {route.icon}
+                    </div>
 
-<section className="content-card quick-card">
-  <div className="section-title">
-    <h3>QUICK GECW ROUTES</h3>
-  </div>
+                    <div className="quick-route-text">
+                      <strong>
+                        {route.from} → {route.to}
+                      </strong>
 
-  <div className="quick-grid">
-    {quickRoutes.map(([a, b, subtitle, icon]) => (
-      <button
-        type="button"
-        className="quick-route-card"
-        key={`${a}-${b}`}
-        onClick={() => quickRoute(a, b)}
-      >
-        <div className="quick-route-icon">
-          {icon}
-        </div>
+                      <span>
+                        {route.subtitle}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </section>
 
-        <div className="quick-route-text">
-          <strong>
-            {a} → {b}
-          </strong>
+            {/* SEARCH */}
 
-          <span>
-            {subtitle}
-          </span>
-        </div>
-      </button>
-    ))}
-  </div>
-</section>
-
-<section className="content-card search-card-new">
-  <h3>Wanna go somewhere else?</h3>
-
-  <div className="route-form">
-    <LocationInput
-      label="From (Departure)"
-      value={from}
-      onChange={setFrom}
-      onSelect={(s) => setFrom(s.name)}
-      placeholder="Search departure place"
-    />
-
-    <div className="swap-row">
-      <span />
-
-      <button
-        type="button"
-        className="swap-button"
-        onClick={() => {
-          setFrom(to);
-          setTo(from);
-        }}
-        aria-label="Swap locations"
-      >
-        ↔
-      </button>
-
-      <span />
-    </div>
-
-    <LocationInput
-      label="To (Destination)"
-      value={to}
-      onChange={setTo}
-      onSelect={(s) => setTo(s.name)}
-      placeholder="Search destination"
-    />
-
-    <button
-      type="button"
-      className="search-bus-button"
-      onClick={() => searchRoute()}
-      disabled={loading}
-    >
-      {loading
-        ? "Searching..."
-        : "Search Bus Timings"}
-    </button>
-  </div>
-
-  {error && (
-    <p className="search-error">
-      {error}
-    </p>
-  )}
-</section>
-
-{searched && (
-  <section
-    ref={resultsRef}
-    className="content-card results-card"
-  >
-    <div className="results-heading">
-      <div>
-        <span>BUS SEARCH</span>
-
-        <h3>
-          {from} → {to}
-        </h3>
-      </div>
-
-      <div className="results-count">
-        {results.length}
-      </div>
-    </div>
-
-    {loading && (
-      <div className="result-empty">
-        <div className="big-result-icon">
-          🚌
-        </div>
-
-        <strong>
-          Finding available buses...
-        </strong>
-      </div>
-    )}
-
-    {!loading && results.length === 0 && (
-      <div className="result-empty">
-        <div className="big-result-icon">
-          🔎
-        </div>
-
-        <strong>
-          No buses found
-        </strong>
-
-        <p>
-          Try another route or check one of
-          the Quick GECW Routes.
-        </p>
-      </div>
-    )}
-
-    {!loading &&
-      results.map((journey, index) => {
-        const segment = journey.segments[0];
-
-        if (!segment) return null;
-
-        const type = busType(segment.trip);
-        const past = Boolean(journey.isPast);
-
-        return (
-          <div
-            className={`bus-result-new ${
-              past ? "past-bus" : ""
-            }`}
-            key={`${segment.trip.id}-${index}`}
-          >
-            <div className="bus-result-heading">
-              <div>
-                <span
-                  className={`status-badge ${
-                    past ? "past" : ""
-                  }`}
-                >
-                  {past
-                    ? "DEPARTED"
-                    : "DIRECT BUS"}
+            <section className="search-card">
+              <div className="search-heading">
+                <span className="section-eyebrow">
+                  JOURNEY PLANNER
                 </span>
 
-                <h4>
-                  🚌 {type}
-                </h4>
+                <h2>
+                  Wanna go somewhere else?
+                </h2>
 
                 <p>
-                  {type === "KSRTC"
-                    ? "Kerala State Road Transport Service"
-                    : "Private Bus Service"}
+                  Search any recognized place,
+                  town or bus stop.
                 </p>
               </div>
 
-              {!past && (
-                <span className="upcoming-dot">
-                  ● UPCOMING
-                </span>
+              <div className="route-search">
+                <LocationInput
+                  label="From"
+                  value={from}
+                  placeholder="Search starting point"
+                  onChange={setFrom}
+                  onSelect={(stop) =>
+                    setFrom(stop.name)
+                  }
+                />
+
+                <button
+                  type="button"
+                  className="swap-button"
+                  onClick={swapLocations}
+                  aria-label="Swap locations"
+                  title="Swap"
+                >
+                  ⇅
+                </button>
+
+                <LocationInput
+                  label="To"
+                  value={to}
+                  placeholder="Where are you going?"
+                  onChange={setTo}
+                  onSelect={(stop) =>
+                    setTo(stop.name)
+                  }
+                />
+
+                <button
+                  type="button"
+                  className="find-bus-button"
+                  onClick={() => searchRoute()}
+                  disabled={loading}
+                >
+                  {loading
+                    ? "Finding..."
+                    : "Find Buses"}
+                  <span>→</span>
+                </button>
+              </div>
+
+              {error && (
+                <div
+                  className="search-message"
+                  role="status"
+                >
+                  {error}
+                </div>
               )}
-            </div>
+            </section>
 
-            <div className="result-route">
-              <div>
-                <span>DEPARTURE</span>
+            {/* RESULTS */}
 
-                <strong>
-                  {journey.departureTime ||
-                    segment.from.departureTime ||
-                    "—"}
-                </strong>
+            <section
+              ref={resultsRef}
+              className="results-section"
+            >
+              {loading && (
+                <div className="results-state">
+                  <div className="loading-spinner" />
 
-                <small>
-                  {segment.from.stop.name}
-                </small>
-              </div>
+                  <h3>
+                    Finding your buses...
+                  </h3>
 
-              <div className="result-arrow">
-                →
-              </div>
-
-              <div>
-                <span>ARRIVAL</span>
-
-                <strong>
-                  {journey.arrivalTime ||
-                    segment.to.arrivalTime ||
-                    "—"}
-                </strong>
-
-                <small>
-                  {segment.to.stop.name}
-                </small>
-              </div>
-            </div>
-
-            {!past &&
-              journey.waitingTimeMinutes !==
-                undefined && (
-                <div className="leaves-banner">
-                  🟢{" "}
-                  {journey.waitingTimeMinutes === 0
-                    ? "Leaving now"
-                    : `Leaves in ${journey.waitingTimeMinutes} min`}
+                  <p>
+                    Checking available direct
+                    routes.
+                  </p>
                 </div>
               )}
 
-            {past && (
-              <div className="departed-banner">
-                🔴 This bus has already departed
+              {!loading &&
+                searched &&
+                results.length === 0 && (
+                  <div className="results-state empty-results">
+                    <div className="empty-icon">
+                      🚌
+                    </div>
+
+                    <h3>
+                      No direct buses found
+                    </h3>
+
+                    <p>
+                      We couldn't find a direct
+                      bus for this route right now.
+                    </p>
+
+                    <small>
+                      Connecting journeys will be
+                      added soon.
+                    </small>
+                  </div>
+                )}
+
+              {!loading &&
+                results.length > 0 && (
+                  <>
+                    <div className="results-title-row">
+                      <div>
+                        <span className="section-eyebrow">
+                          RESULTS
+                        </span>
+
+                        <h2>
+                          {from} → {to}
+                        </h2>
+                      </div>
+
+                      <span className="result-count">
+                        {results.length} bus
+                        {results.length !== 1
+                          ? "es"
+                          : ""}
+                      </span>
+                    </div>
+
+                    <div className="results-list">
+                      {results.map(
+                        (journey, index) => {
+                          const segment =
+                            journey.segments?.[0];
+
+                          const bus =
+                            segment?.trip;
+
+                          const isPast =
+                            journey.isPast === true;
+
+                          return (
+                            <article
+                              className={`bus-result-card ${
+                                isPast
+                                  ? "past-bus"
+                                  : ""
+                              }`}
+                              key={`${bus?.id || "bus"}-${index}`}
+                            >
+                              <div className="bus-result-top">
+                                <div className="bus-type">
+                                  <span className="bus-icon">
+                                    🚌
+                                  </span>
+
+                                  <div>
+                                    <strong>
+                                      {bus
+                                        ? getBusType(bus)
+                                        : "Bus"}
+                                    </strong>
+
+                                    <small>
+                                      {bus?.operator ||
+                                        "Transport service"}
+                                    </small>
+                                  </div>
+                                </div>
+
+                                <span
+                                  className={`bus-status ${
+                                    isPast
+                                      ? "departed"
+                                      : bus?.isLive
+                                      ? "live"
+                                      : ""
+                                  }`}
+                                >
+                                  {isPast
+                                    ? "Departed"
+                                    : bus?.isLive
+                                    ? "LIVE"
+                                    : "Scheduled"}
+                                </span>
+                              </div>
+
+                              <div className="bus-time-row">
+                                <div>
+                                  <strong>
+                                    {formatTime(
+                                      journey.departureTime ||
+                                        segment?.from
+                                          .departureTime
+                                    )}
+                                  </strong>
+
+                                  <span>
+                                    {segment?.from.stop.name ||
+                                      from}
+                                  </span>
+                                </div>
+
+                                <div className="bus-route-line">
+                                  <span />
+                                  <div />
+                                  <span />
+                                </div>
+
+                                <div className="bus-time-destination">
+                                  <strong>
+                                    {formatTime(
+                                      journey.arrivalTime ||
+                                        segment?.to
+                                          .arrivalTime
+                                    )}
+                                  </strong>
+
+                                  <span>
+                                    {segment?.to.stop.name ||
+                                      to}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="bus-result-bottom">
+                                <span>
+                                  {journey.totalDurationMinutes
+                                    ? `${journey.totalDurationMinutes} min`
+                                    : "Direct route"}
+                                </span>
+
+                                <span>
+                                  {isPast
+                                    ? "This bus has already departed"
+                                    : "Direct bus"}
+                                </span>
+                              </div>
+                            </article>
+                          );
+                        }
+                      )}
+                    </div>
+                  </>
+                )}
+            </section>
+
+            {/* INFORMATION */}
+
+            <section className="info-card">
+              <div className="info-icon">
+                ℹ
               </div>
-            )}
-          </div>
-        );
-      })}
-  </section>
-)}
 
-<section className="disclaimer-card">
-  <div className="info-icon">
-    i
-  </div>
+              <div>
+                <strong>
+                  About GECW Go
+                </strong>
 
-  <p>
-    <strong>Disclaimer:</strong>{" "}
-    Bus timings are collected for student
-    convenience. Schedules may change because
-    of traffic, holidays, operational changes
-    or other circumstances. Please verify
-    important journeys before travelling.
-  </p>
-</section>
+                <p>
+                  GECW Go helps students discover
+                  available bus routes around
+                  Government Engineering College
+                  Wayanad.
+                </p>
+              </div>
+            </section>
+          </>
+        ) : (
+          /* AUTO / JEEP */
 
-<section className="transpo-footer-brand">
-  <div className="footer-mark">
-    🚌
-  </div>
+          <section className="coming-soon-card">
+            <div className="coming-soon-icon">
+              {transport === "Auto"
+                ? "🛺"
+                : "🚙"}
+            </div>
 
-  <div>
-    <strong>GECW Go</strong>
+            <span className="section-eyebrow">
+              COMING SOON
+            </span>
 
-    <span>
-      {" "}
-      · Smart Campus Mobility for Government
-      Engineering College Wayanad
-    </span>
+            <h2>
+              {transport} services are coming soon
+            </h2>
 
-    <small>
-      Student-focused transport information
-    </small>
-  </div>
-</section>
+            <p>
+              We're working on bringing more
+              local transport options to GECW Go.
+            </p>
 
-</>
-) : (
-  <section className="content-card coming-card">
-    <div className="coming-icon">
-      {transport === "Auto" ? "🛺" : "🚙"}
-    </div>
+            <button
+              type="button"
+              onClick={() => setTransport("Bus")}
+            >
+              Back to Bus Timings
+            </button>
+          </section>
+        )}
 
-    <span>
-      COMING SOON
-    </span>
+        {/* FOOTER */}
 
-    <h2>
-      {transport === "Auto"
-        ? "Verified Auto Network"
-        : "Local Jeep Network"}
-    </h2>
+        <footer className="transpo-footer">
+          <strong>GECW GO</strong>
 
-    <p>
-      We're working on bringing reliable local
-      transport information to GECW students.
-    </p>
-  </section>
-)}
+          <span>
+            Find your route. Make your journey.
+          </span>
 
-</div>
-</main>
-);
+          <small>
+            Transport information may change.
+            Always verify timings before travelling.
+          </small>
+        </footer>
+      </div>
+    </main>
+  );
 }
