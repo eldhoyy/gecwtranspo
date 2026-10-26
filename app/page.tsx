@@ -362,6 +362,7 @@ export default function Home() {
   };
 
   const welcome = welcomeMessages[welcomeIndex];
+  const resultsRef = useRef<HTMLElement>(null);
 
   return (
     <main className="transpo-page">
