@@ -83,6 +83,24 @@ const quickRoutes = [
   },
 ];
 
+const welcomeMessages = [
+  {
+    language: "ENGLISH",
+    title: "Welcome!",
+    subtitle: "Where are we heading today?",
+  },
+  {
+    language: "മലയാളം",
+    title: "സ്വാഗതം!",
+    subtitle: "ഇന്ന് എങ്ങോട്ടാണ് യാത്ര?",
+  },
+  {
+    language: "हिन्दी",
+    title: "स्वागत है!",
+    subtitle: "आज कहाँ जाना है?",
+  },
+];
+
 function LocationInput({
   label,
   value,
@@ -179,6 +197,22 @@ function LocationInput({
   );
 }
 
+function getBusType(bus: TransportTrip): "Private Bus" | "KSRTC" {
+  const source = bus.source.toLowerCase();
+  const operator = (bus.operator || "").toLowerCase();
+
+  if (
+    source === "public-transport-api" ||
+    source.includes("ksrtc") ||
+    operator.includes("ksrtc") ||
+    operator.includes("kerala state road")
+  ) {
+    return "KSRTC";
+  }
+
+  return "Private Bus";
+}
+
 export default function Home() {
   const [transport, setTransport] = useState("Bus");
   const [from, setFrom] = useState("");
@@ -188,6 +222,31 @@ export default function Home() {
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState("");
   const [clock, setClock] = useState("");
+
+  const [darkMode, setDarkMode] = useState(false);
+  const [welcomeIndex, setWelcomeIndex] = useState(0);
+
+  useEffect(() => {
+    const savedTheme = window.localStorage.getItem("gecw-go-theme");
+
+    if (savedTheme === "dark") {
+      setDarkMode(true);
+      document.documentElement.classList.add("dark-theme");
+    } else if (savedTheme === "light") {
+      setDarkMode(false);
+      document.documentElement.classList.remove("dark-theme");
+    } else {
+      const prefersDark = window.matchMedia(
+        "(prefers-color-scheme: dark)"
+      ).matches;
+
+      setDarkMode(prefersDark);
+
+      if (prefersDark) {
+        document.documentElement.classList.add("dark-theme");
+      }
+    }
+  }, []);
 
   useEffect(() => {
     const updateClock = () => {
@@ -209,6 +268,30 @@ export default function Home() {
     return () => clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setWelcomeIndex((current) => {
+        return (current + 1) % welcomeMessages.length;
+      });
+    }, 3000);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  const toggleTheme = () => {
+    const next = !darkMode;
+
+    setDarkMode(next);
+
+    if (next) {
+      document.documentElement.classList.add("dark-theme");
+      window.localStorage.setItem("gecw-go-theme", "dark");
+    } else {
+      document.documentElement.classList.remove("dark-theme");
+      window.localStorage.setItem("gecw-go-theme", "light");
+    }
+  };
+
   const searchRoute = async (
     searchFrom = from,
     searchTo = to
@@ -222,7 +305,9 @@ export default function Home() {
       searchFrom.trim().toLowerCase() ===
       searchTo.trim().toLowerCase()
     ) {
-      setError("Starting point and destination cannot be the same.");
+      setError(
+        "Starting point and destination cannot be the same."
+      );
       return;
     }
 
@@ -247,7 +332,9 @@ export default function Home() {
       setResults(data.directJourneys || []);
     } catch (err) {
       console.error(err);
-      setError("Unable to find buses right now. Please try again.");
+      setError(
+        "Unable to find buses right now. Please try again."
+      );
     } finally {
       setLoading(false);
     }
@@ -274,6 +361,8 @@ export default function Home() {
     searchRoute(routeFrom, routeTo);
   };
 
+  const welcome = welcomeMessages[welcomeIndex];
+
   return (
     <main className="transpo-page">
       <div className="transpo-shell">
@@ -299,9 +388,29 @@ export default function Home() {
 
           <div className="transpo-header-bottom">
             <div className="live-clock">
-              <span className="clock-icon">☼</span>
+              <button
+                type="button"
+                className="theme-toggle"
+                onClick={toggleTheme}
+                aria-label={
+                  darkMode
+                    ? "Switch to light theme"
+                    : "Switch to dark theme"
+                }
+                title={
+                  darkMode
+                    ? "Light theme"
+                    : "Dark theme"
+                }
+              >
+                {darkMode ? "☾" : "☼"}
+              </button>
+
               <span className="clock-dot" />
-              <strong>{clock || "--:--:--"}</strong>
+
+              <strong>
+                {clock || "--:--:--"}
+              </strong>
             </div>
 
             <div className="header-actions">
@@ -309,7 +418,9 @@ export default function Home() {
                 type="button"
                 className="login-button"
                 onClick={() =>
-                  setError("Login / Sign Up will be available soon.")
+                  setError(
+                    "Login / Sign Up will be added later."
+                  )
                 }
               >
                 Login / Sign Up
@@ -320,7 +431,7 @@ export default function Home() {
                 className="help-button"
                 onClick={() =>
                   setError(
-                    "Need help? Search your route or use one of the Quick GECW Routes."
+                    "FAQ and Help will be added later."
                   )
                 }
                 aria-label="Help"
@@ -370,7 +481,9 @@ export default function Home() {
             type="button"
             className="transport-tab-icon"
             onClick={() =>
-              setError("More transport options are coming soon.")
+              setError(
+                "More transport options are coming soon."
+              )
             }
             aria-label="More transport"
           >
@@ -384,24 +497,58 @@ export default function Home() {
             <section className="welcome-card">
               <div className="welcome-copy">
                 <span className="welcome-small">
-                  GECW GO
+                  {welcome.language}
                 </span>
 
-                <h2>Welcome!</h2>
+                <div
+                  key={welcomeIndex}
+                  className="welcome-message-animation"
+                >
+                  <h2>{welcome.title}</h2>
 
-                <p>
-                  Where are we heading
-                  <br />
-                  today?
-                </p>
+                  <p>
+                    {welcome.subtitle}
+                  </p>
+                </div>
               </div>
 
-              <div className="welcome-art">
-                <div className="art-sun">●</div>
-                <div className="art-person">🧑‍🎓</div>
-                <div className="art-bag">🧳</div>
-                <div className="art-pin pin-one">●</div>
-                <div className="art-pin pin-two">●</div>
+              {/* ANIMATED TRAVEL ILLUSTRATION */}
+              <div className="welcome-motion">
+                <div className="motion-cloud cloud-one">
+                  ☁️
+                </div>
+
+                <div className="motion-cloud cloud-two">
+                  ☁️
+                </div>
+
+                <div className="motion-sun">
+                  ☀️
+                </div>
+
+                <div className="motion-road">
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+                </div>
+
+                <div className="motion-bus">
+                  <div className="motion-bus-top">
+                    GECW
+                  </div>
+
+                  <div className="motion-window window-one" />
+                  <div className="motion-window window-two" />
+                  <div className="motion-window window-three" />
+
+                  <div className="motion-wheel wheel-one" />
+                  <div className="motion-wheel wheel-two" />
+                </div>
+
+                <div className="motion-person">
+                  🧑‍🎓
+                </div>
               </div>
             </section>
 
@@ -444,14 +591,18 @@ export default function Home() {
 
             {/* SEARCH */}
             <section className="content-card search-card-new">
-              <h3>Wanna go somewhere else?</h3>
+              <h3>
+                Wanna go somewhere else?
+              </h3>
 
               <div className="route-form">
                 <LocationInput
                   label="From (Departure)"
                   value={from}
                   onChange={setFrom}
-                  onSelect={(stop) => setFrom(stop.name)}
+                  onSelect={(stop) =>
+                    setFrom(stop.name)
+                  }
                   placeholder="Search departure place"
                 />
 
@@ -472,7 +623,9 @@ export default function Home() {
                   label="To (Destination)"
                   value={to}
                   onChange={setTo}
-                  onSelect={(stop) => setTo(stop.name)}
+                  onSelect={(stop) =>
+                    setTo(stop.name)
+                  }
                   placeholder="Search destination"
                 />
 
@@ -501,6 +654,7 @@ export default function Home() {
                 <div className="results-heading">
                   <div>
                     <span>BUS SEARCH</span>
+
                     <h3>
                       {from} → {to}
                     </h3>
@@ -516,28 +670,30 @@ export default function Home() {
                     <div className="big-result-icon">
                       🚌
                     </div>
+
                     <strong>
                       Finding available buses...
                     </strong>
                   </div>
                 )}
 
-                {!loading && results.length === 0 && (
-                  <div className="result-empty">
-                    <div className="big-result-icon">
-                      🔎
+                {!loading &&
+                  results.length === 0 && (
+                    <div className="result-empty">
+                      <div className="big-result-icon">
+                        🔎
+                      </div>
+
+                      <strong>
+                        No buses found
+                      </strong>
+
+                      <p>
+                        Try another route or check
+                        one of the Quick GECW Routes.
+                      </p>
                     </div>
-
-                    <strong>
-                      No buses found
-                    </strong>
-
-                    <p>
-                      Try another route or check
-                      one of the Quick GECW Routes.
-                    </p>
-                  </div>
-                )}
+                  )}
 
                 {!loading &&
                   results.map((journey, index) => {
@@ -548,6 +704,7 @@ export default function Home() {
 
                     const bus = segment.trip;
                     const past = journey.isPast;
+                    const busType = getBusType(bus);
 
                     return (
                       <div
@@ -571,14 +728,15 @@ export default function Home() {
                             </span>
 
                             <h4>
-                              🚌{" "}
-                              {bus.vehicleNumber ||
-                                "Scheduled Bus"}
+                              🚌 {busType}
                             </h4>
 
                             <p>
                               {bus.serviceName ||
-                                "Private Bus Service"}
+                                (busType ===
+                                "KSRTC"
+                                  ? "Kerala State Road Transport Service"
+                                  : "Private Bus Service")}
                             </p>
                           </div>
 
@@ -591,117 +749,19 @@ export default function Home() {
 
                         <div className="result-route">
                           <div>
-                            <span>DEPARTURE</span>
+                            <span>
+                              DEPARTURE
+                            </span>
+
                             <strong>
                               {journey.departureTime ||
                                 "—"}
                             </strong>
+
                             <small>
                               {segment.from.stop.name}
                             </small>
                           </div>
 
                           <div className="result-arrow">
-                            →
-                          </div>
-
-                          <div>
-                            <span>ARRIVAL</span>
-                            <strong>
-                              {journey.arrivalTime ||
-                                "—"}
-                            </strong>
-                            <small>
-                              {segment.to.stop.name}
-                            </small>
-                          </div>
-                        </div>
-
-                        {!past &&
-                          journey.waitingTimeMinutes !==
-                            undefined && (
-                            <div className="leaves-banner">
-                              🟢{" "}
-                              {journey.waitingTimeMinutes ===
-                              0
-                                ? "Leaving now"
-                                : `Leaves in ${journey.waitingTimeMinutes} min`}
-                            </div>
-                          )}
-
-                        {past && (
-                          <div className="departed-banner">
-                            🔴 This bus has already departed
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-              </section>
-            )}
-
-            {/* DISCLAIMER */}
-            <section className="disclaimer-card">
-              <div className="info-icon">i</div>
-
-              <p>
-                <strong>Disclaimer:</strong>{" "}
-                Bus timings are collected for
-                student convenience. Schedules may
-                change because of traffic, holidays,
-                operational changes or other
-                circumstances. Please verify important
-                journeys before travelling.
-              </p>
-            </section>
-
-            {/* FOOTER BRAND */}
-            <section className="transpo-footer-brand">
-              <div className="footer-mark">
-                🚌
-              </div>
-
-              <div>
-                <strong>
-                  GECW Go
-                </strong>
-
-                <span>
-                  · Smart Campus Mobility for
-                  Government Engineering College Wayanad
-                </span>
-
-                <small>
-                  Student-focused transport information
-                </small>
-              </div>
-            </section>
-          </>
-        ) : (
-          <section className="content-card coming-card">
-            <div className="coming-icon">
-              {transport === "Auto"
-                ? "🛺"
-                : "🚙"}
-            </div>
-
-            <span>COMING SOON</span>
-
-            <h2>
-              {transport === "Auto"
-                ? "Verified Auto Network"
-                : "Local Jeep Network"}
-            </h2>
-
-            <p>
-              We're working on bringing reliable
-              local transport information to GECW
-              students.
-            </p>
-          </section>
-        )}
-
-      </div>
-    </main>
-  );
-}
+        
