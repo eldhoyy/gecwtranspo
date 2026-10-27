@@ -17,8 +17,11 @@ function stopMatches(
   stop: ScheduledStop,
   place: string
 ): boolean {
-  const stopName = normalizeName(stop.stop.name);
-  const searchName = normalizeName(place);
+  const stopName =
+    normalizeName(stop.stop.name);
+
+  const searchName =
+    normalizeName(place);
 
   return (
     stopName === searchName ||
@@ -27,12 +30,6 @@ function stopMatches(
   );
 }
 
-/**
- * Converts:
- *  "2:30 pm" -> 870
- *  "05:40 AM" -> 340
- *  "17:40" -> 1060
- */
 function timeToMinutes(
   value: string | null | undefined
 ): number | null {
@@ -43,13 +40,21 @@ function timeToMinutes(
     .toLowerCase()
     .replace(/\s+/g, " ");
 
-  // 24-hour format: 17:40
+  /*
+   * 24-hour format
+   * Example: 17:40
+   */
   const twentyFourHour =
-    text.match(/^(\d{1,2}):(\d{2})$/);
+    text.match(
+      /^(\d{1,2}):(\d{2})$/
+    );
 
   if (twentyFourHour) {
-    const hour = Number(twentyFourHour[1]);
-    const minute = Number(twentyFourHour[2]);
+    const hour =
+      Number(twentyFourHour[1]);
+
+    const minute =
+      Number(twentyFourHour[2]);
 
     if (
       hour >= 0 &&
@@ -61,14 +66,27 @@ function timeToMinutes(
     }
   }
 
-  // 12-hour format: 2:30 pm / 2 pm / 02:30 PM
+  /*
+   * 12-hour format
+   * Examples:
+   * 2:30 pm
+   * 5:40 PM
+   * 02:30 PM
+   */
   const twelveHour =
-    text.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/);
+    text.match(
+      /^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/
+    );
 
   if (twelveHour) {
-    let hour = Number(twelveHour[1]);
-    const minute = Number(twelveHour[2] ?? "0");
-    const period = twelveHour[3];
+    let hour =
+      Number(twelveHour[1]);
+
+    const minute =
+      Number(twelveHour[2] ?? "0");
+
+    const period =
+      twelveHour[3];
 
     if (
       hour >= 1 &&
@@ -77,9 +95,13 @@ function timeToMinutes(
       minute <= 59
     ) {
       if (period === "am") {
-        if (hour === 12) hour = 0;
+        if (hour === 12) {
+          hour = 0;
+        }
       } else {
-        if (hour !== 12) hour += 12;
+        if (hour !== 12) {
+          hour += 12;
+        }
       }
 
       return hour * 60 + minute;
@@ -89,26 +111,38 @@ function timeToMinutes(
   return null;
 }
 
-/**
- * Current time in India.
- */
 function getCurrentIndiaMinutes(): number {
-  const formatter = new Intl.DateTimeFormat("en-IN", {
-    timeZone: "Asia/Kolkata",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+  const formatter =
+    new Intl.DateTimeFormat(
+      "en-IN",
+      {
+        timeZone: "Asia/Kolkata",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }
+    );
 
-  const parts = formatter.formatToParts(new Date());
+  const parts =
+    formatter.formatToParts(
+      new Date()
+    );
 
-  const hour = Number(
-    parts.find((part) => part.type === "hour")?.value ?? "0"
-  );
+  const hour =
+    Number(
+      parts.find(
+        (part) =>
+          part.type === "hour"
+      )?.value ?? "0"
+    );
 
-  const minute = Number(
-    parts.find((part) => part.type === "minute")?.value ?? "0"
-  );
+  const minute =
+    Number(
+      parts.find(
+        (part) =>
+          part.type === "minute"
+      )?.value ?? "0"
+    );
 
   return hour * 60 + minute;
 }
@@ -118,13 +152,17 @@ function createDirectJourney(
   from: string,
   to: string
 ): Journey | null {
-  const fromIndex = trip.stops.findIndex(
-    (stop) => stopMatches(stop, from)
-  );
+  const fromIndex =
+    trip.stops.findIndex(
+      (stop) =>
+        stopMatches(stop, from)
+    );
 
-  const toIndex = trip.stops.findIndex(
-    (stop) => stopMatches(stop, to)
-  );
+  const toIndex =
+    trip.stops.findIndex(
+      (stop) =>
+        stopMatches(stop, to)
+    );
 
   if (
     fromIndex === -1 ||
@@ -134,8 +172,11 @@ function createDirectJourney(
     return null;
   }
 
-  const fromStop = trip.stops[fromIndex];
-  const toStop = trip.stops[toIndex];
+  const fromStop =
+    trip.stops[fromIndex];
+
+  const toStop =
+    trip.stops[toIndex];
 
   const departureTime =
     fromStop.departureTime ??
@@ -147,24 +188,41 @@ function createDirectJourney(
     toStop.departureTime ??
     undefined;
 
+  const departureMinutes =
+    timeToMinutes(
+      departureTime
+    );
+
   const currentMinutes =
     getCurrentIndiaMinutes();
 
-  const departureMinutes =
-    timeToMinutes(departureTime);
-
-  let waitingTimeMinutes: number | undefined;
+  let waitingTimeMinutes:
+    | number
+    | undefined;
 
   let isPast = false;
 
-  if (departureMinutes !== null) {
+  if (
+    departureMinutes !== null
+  ) {
     waitingTimeMinutes =
-      departureMinutes - currentMinutes;
+      departureMinutes -
+      currentMinutes;
 
-    isPast = waitingTimeMinutes < 0;
+    /*
+     * IMPORTANT:
+     * Do NOT remove past buses.
+     *
+     * We keep them so the UI can show:
+     * DEPARTED
+     */
+    isPast =
+      departureMinutes <
+      currentMinutes;
   }
 
-  const segment: JourneySegment = {
+  const segment:
+    JourneySegment = {
     trip,
     from: fromStop,
     to: toStop,
@@ -172,15 +230,20 @@ function createDirectJourney(
 
   return {
     segments: [segment],
-    transfers: 0,
-    departureTime,
-    arrivalTime,
-    waitingTimeMinutes,
-    isLive: trip.isLive ?? false,
 
-    // Extra information used by the UI.
+    transfers: 0,
+
+    departureTime,
+
+    arrivalTime,
+
+    waitingTimeMinutes,
+
+    isLive:
+      trip.isLive ?? false,
+
     isPast,
-  } as Journey;
+  };
 }
 
 export function findDirectJourneys(
@@ -190,38 +253,50 @@ export function findDirectJourneys(
 ): Journey[] {
   return trips
     .map((trip) =>
-      createDirectJourney(trip, from, to)
+      createDirectJourney(
+        trip,
+        from,
+        to
+      )
     )
     .filter(
-      (journey): journey is Journey =>
+      (
+        journey
+      ): journey is Journey =>
         journey !== null
     )
     .sort((a, b) => {
+      /*
+       * Upcoming buses first.
+       * Departed buses afterwards.
+       */
       const aPast =
-        (a as Journey & { isPast?: boolean }).isPast
-          ? 1
-          : 0;
+        a.isPast ? 1 : 0;
 
       const bPast =
-        (b as Journey & { isPast?: boolean }).isPast
-          ? 1
-          : 0;
+        b.isPast ? 1 : 0;
 
-      // Upcoming buses first.
-      if (aPast !== bPast) {
-        return aPast - bPast;
+      if (
+        aPast !== bPast
+      ) {
+        return (
+          aPast - bPast
+        );
       }
 
-      // Then earliest departure.
-      const aWait =
+      /*
+       * Within each group,
+       * sort by departure time.
+       */
+      const aTime =
         a.waitingTimeMinutes ??
         Number.MAX_SAFE_INTEGER;
 
-      const bWait =
+      const bTime =
         b.waitingTimeMinutes ??
         Number.MAX_SAFE_INTEGER;
 
-      return aWait - bWait;
+      return aTime - bTime;
     });
 }
 
@@ -230,14 +305,23 @@ export function createSearchResult(
   to: string,
   trips: TransportTrip[]
 ): TransportSearchResult {
-  const directJourneys =
-    findDirectJourneys(trips, from, to);
-
   return {
     from,
     to,
-    directJourneys,
+
+    /*
+     * Every matching direct trip
+     * is retained.
+     */
+    directJourneys:
+      findDirectJourneys(
+        trips,
+        from,
+        to
+      ),
+
     connectingJourneys: [],
+
     searchedAt:
       new Date().toISOString(),
   };
