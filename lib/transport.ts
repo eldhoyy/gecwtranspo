@@ -14,7 +14,9 @@ type ApiStation = {
   departureTime?: string | null;
 };
 
-type ApiSchedule = {
+type ApiTrip = {
+  vehicle_number?: string;
+  "Vehicle Number"?: string;
   trip?: string | number;
   stations?: ApiStation[];
 };
@@ -23,7 +25,10 @@ type ApiBus = {
   "Vehicle Number"?: string;
   vehicle_number?: string;
   route?: string[];
-  schedule?: ApiSchedule[];
+  schedule?: {
+    trip?: string | number;
+    stations?: ApiStation[];
+  }[];
 };
 
 type Dataset = {
@@ -64,24 +69,14 @@ function stationMatches(
   );
 }
 
-function convertSchedule(
-  bus: ApiBus,
-  schedule: ApiSchedule,
-  index: number
-): TransportTrip | null {
-  if (
-    !Array.isArray(schedule.stations) ||
-    schedule.stations.length < 2
-  ) {
-    return null;
+function convertStations(
+  stations: ApiStation[] | undefined
+): ScheduledStop[] {
+  if (!Array.isArray(stations)) {
+    return [];
   }
 
-  const vehicleNumber =
-    bus["Vehicle Number"] ??
-    bus.vehicle_number ??
-    undefined;
-
-  const stops: ScheduledStop[] = schedule.stations
+  return stations
     .map((station, sequence) => {
       const name = station.station?.trim();
 
@@ -105,29 +100,35 @@ function convertSchedule(
       (stop): stop is ScheduledStop =>
         stop !== null
     );
+}
+
+function convertApiTrip(
+  trip: ApiTrip,
+  index: number
+): TransportTrip | null {
+  const stops = convertStations(trip.stations);
 
   if (stops.length < 2) {
     return null;
   }
 
+  const vehicleNumber =
+    trip.vehicle_number ??
+    trip["Vehicle Number"] ??
+    undefined;
+
+  const tripNumber = trip.trip ?? index;
+
   return {
-    /*
-     * IMPORTANT:
-     * Do not use only the vehicle number as the ID.
-     *
-     * One bus can have multiple scheduled trips.
-     * Each trip must therefore have its own unique ID.
-     */
-    id:
-      `private-${vehicleNumber || "bus"}-${schedule.trip ?? index}`
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-"),
+    id: `private-${vehicleNumber || "bus"}-${tripNumber}`
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-"),
 
     vehicleNumber,
 
     serviceName:
-      schedule.trip !== undefined
-        ? `Trip ${schedule.trip}`
+      trip.trip !== undefined
+        ? `Trip ${trip.trip}`
         : undefined,
 
     operator: "Private Bus",
@@ -157,9 +158,18 @@ function convertDataset(
       : [];
 
     schedules.forEach((schedule, scheduleIndex) => {
-      const trip = convertSchedule(
-        bus,
-        schedule,
+      const trip = convertApiTrip(
+        {
+          vehicle_number:
+            bus.vehicle_number,
+
+          "Vehicle Number":
+            bus["Vehicle Number"],
+
+          trip: schedule.trip,
+
+          stations: schedule.stations,
+        },
         busIndex * 1000 + scheduleIndex
       );
 
@@ -178,12 +188,20 @@ function findDirectTrips(
   to: string
 ): TransportTrip[] {
   return trips.filter((trip) => {
-    const fromIndex = trip.stops.findIndex((stop) =>
-      stationMatches(stop.stop.name, from)
+    const fromIndex = trip.stops.findIndex(
+      (stop) =>
+        stationMatches(
+          stop.stop.name,
+          from
+        )
     );
 
-    const toIndex = trip.stops.findIndex((stop) =>
-      stationMatches(stop.stop.name, to)
+    const toIndex = trip.stops.findIndex(
+      (stop) =>
+        stationMatches(
+          stop.stop.name,
+          to
+        )
     );
 
     return (
@@ -194,14 +212,6 @@ function findDirectTrips(
   });
 }
 
-/*
- * Get ALL matching trips from the schedule API.
- *
- * IMPORTANT:
- * We deliberately do NOT send the optional `time`
- * parameter. Sending a time can cause already-departed
- * or other scheduled buses to disappear from the results.
- */
 async function fetchFromScheduleApi(
   from: string,
   to: string
@@ -234,56 +244,8 @@ async function fetchFromScheduleApi(
 
   return data
     .map((item, index) =>
-      convertSchedule(
-        {
-          vehicle_number:
-            (item as {
-              vehicle_number?: string;
-            }).vehicle_number,
-
-          "Vehicle Number":
-            (item as {
-              "Vehicle Number"?: string;
-            })["Vehicle Number"],
-
-          schedule: [
-            {
-              trip: (item as {
-                trip?: string | number;
-              }).trip,
-
-              stations: (item as {
-                stations?: ApiStation[];
-              }).stations,
-            },
-          ],
-        },
-        (
-          item as {
-            trip?: string | number;
-          }
-        ).trip !== undefined
-          ? {
-              trip: (
-                item as {
-                  trip?: string | number;
-                }
-              ).trip,
-
-              stations: (
-                item as {
-                  stations?: ApiStation[];
-                }
-              ).stations,
-            }
-          : {
-              stations: (
-                item as {
-                  stations?: ApiStation[];
-                }
-              ).stations,
-            },
-        },
+      convertApiTrip(
+        item as ApiTrip,
         index
       )
     )
@@ -293,20 +255,20 @@ async function fetchFromScheduleApi(
     );
 }
 
-/*
- * Fallback to the Wayanad dataset if the API is unavailable.
- */
 async function fetchFromDataset(): Promise<
   TransportTrip[]
 > {
-  const response = await fetch(DATASET_URL, {
-    headers: {
-      Accept: "application/json",
-    },
-    next: {
-      revalidate: 3600,
-    },
-  });
+  const response = await fetch(
+    DATASET_URL,
+    {
+      headers: {
+        Accept: "application/json",
+      },
+      next: {
+        revalidate: 3600,
+      },
+    }
+  );
 
   if (!response.ok) {
     throw new Error(
@@ -314,7 +276,8 @@ async function fetchFromDataset(): Promise<
     );
   }
 
-  const data: Dataset = await response.json();
+  const data: Dataset =
+    await response.json();
 
   return convertDataset(data);
 }
@@ -323,15 +286,16 @@ export async function searchBuses(
   from: string,
   to: string
 ): Promise<TransportSearchResult> {
-  const resolvedFrom = resolveStopName(from);
-  const resolvedTo = resolveStopName(to);
+  const resolvedFrom =
+    resolveStopName(from);
+
+  const resolvedTo =
+    resolveStopName(to);
 
   try {
-    let directTrips: TransportTrip[] = [];
+    let directTrips: TransportTrip[] =
+      [];
 
-    /*
-     * First try the schedule API.
-     */
     try {
       const apiTrips =
         await fetchFromScheduleApi(
@@ -339,28 +303,27 @@ export async function searchBuses(
           resolvedTo
         );
 
-      directTrips = findDirectTrips(
-        apiTrips,
-        resolvedFrom,
-        resolvedTo
-      );
+      directTrips =
+        findDirectTrips(
+          apiTrips,
+          resolvedFrom,
+          resolvedTo
+        );
     } catch (apiError) {
       console.warn(
         "Schedule API failed. Using Wayanad dataset.",
         apiError
       );
 
-      /*
-       * Fallback dataset.
-       */
       const allTrips =
         await fetchFromDataset();
 
-      directTrips = findDirectTrips(
-        allTrips,
-        resolvedFrom,
-        resolvedTo
-      );
+      directTrips =
+        findDirectTrips(
+          allTrips,
+          resolvedFrom,
+          resolvedTo
+        );
     }
 
     console.log(
