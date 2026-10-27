@@ -30,6 +30,9 @@ type Dataset = {
   busSchedules?: ApiBus[];
 };
 
+const SCHEDULE_API_URL =
+  "https://busapi.amithv.xyz/api/v1/schedules";
+
 const DATASET_URL =
   "https://raw.githubusercontent.com/amith-vp/Kerala-Private-Bus-Timing/main/wayanad.json";
 
@@ -108,9 +111,17 @@ function convertSchedule(
   }
 
   return {
+    /*
+     * IMPORTANT:
+     * Do not use only the vehicle number as the ID.
+     *
+     * One bus can have multiple scheduled trips.
+     * Each trip must therefore have its own unique ID.
+     */
     id:
-      vehicleNumber ??
-      `private-${index}-${schedule.trip ?? "trip"}`,
+      `private-${vehicleNumber || "bus"}-${schedule.trip ?? index}`
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-"),
 
     vehicleNumber,
 
@@ -183,6 +194,131 @@ function findDirectTrips(
   });
 }
 
+/*
+ * Get ALL matching trips from the schedule API.
+ *
+ * IMPORTANT:
+ * We deliberately do NOT send the optional `time`
+ * parameter. Sending a time can cause already-departed
+ * or other scheduled buses to disappear from the results.
+ */
+async function fetchFromScheduleApi(
+  from: string,
+  to: string
+): Promise<TransportTrip[]> {
+  const url =
+    `${SCHEDULE_API_URL}?departure=${encodeURIComponent(
+      from
+    )}&destination=${encodeURIComponent(to)}`;
+
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/json",
+    },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Schedule API returned ${response.status}`
+    );
+  }
+
+  const data: unknown = await response.json();
+
+  if (!Array.isArray(data)) {
+    throw new Error(
+      "Schedule API returned invalid data."
+    );
+  }
+
+  return data
+    .map((item, index) =>
+      convertSchedule(
+        {
+          vehicle_number:
+            (item as {
+              vehicle_number?: string;
+            }).vehicle_number,
+
+          "Vehicle Number":
+            (item as {
+              "Vehicle Number"?: string;
+            })["Vehicle Number"],
+
+          schedule: [
+            {
+              trip: (item as {
+                trip?: string | number;
+              }).trip,
+
+              stations: (item as {
+                stations?: ApiStation[];
+              }).stations,
+            },
+          ],
+        },
+        (
+          item as {
+            trip?: string | number;
+          }
+        ).trip !== undefined
+          ? {
+              trip: (
+                item as {
+                  trip?: string | number;
+                }
+              ).trip,
+
+              stations: (
+                item as {
+                  stations?: ApiStation[];
+                }
+              ).stations,
+            }
+          : {
+              stations: (
+                item as {
+                  stations?: ApiStation[];
+                }
+              ).stations,
+            },
+        },
+        index
+      )
+    )
+    .filter(
+      (trip): trip is TransportTrip =>
+        trip !== null
+    );
+}
+
+/*
+ * Fallback to the Wayanad dataset if the API is unavailable.
+ */
+async function fetchFromDataset(): Promise<
+  TransportTrip[]
+> {
+  const response = await fetch(DATASET_URL, {
+    headers: {
+      Accept: "application/json",
+    },
+    next: {
+      revalidate: 3600,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Bus dataset returned ${response.status}`
+    );
+  }
+
+  const data: Dataset = await response.json();
+
+  return convertDataset(data);
+}
+
 export async function searchBuses(
   from: string,
   to: string
@@ -191,34 +327,44 @@ export async function searchBuses(
   const resolvedTo = resolveStopName(to);
 
   try {
-    const response = await fetch(DATASET_URL, {
-      headers: {
-        Accept: "application/json",
-      },
-      next: {
-        revalidate: 3600,
-      },
-    });
+    let directTrips: TransportTrip[] = [];
 
-    if (!response.ok) {
-      throw new Error(
-        `Bus dataset returned ${response.status}`
+    /*
+     * First try the schedule API.
+     */
+    try {
+      const apiTrips =
+        await fetchFromScheduleApi(
+          resolvedFrom,
+          resolvedTo
+        );
+
+      directTrips = findDirectTrips(
+        apiTrips,
+        resolvedFrom,
+        resolvedTo
+      );
+    } catch (apiError) {
+      console.warn(
+        "Schedule API failed. Using Wayanad dataset.",
+        apiError
+      );
+
+      /*
+       * Fallback dataset.
+       */
+      const allTrips =
+        await fetchFromDataset();
+
+      directTrips = findDirectTrips(
+        allTrips,
+        resolvedFrom,
+        resolvedTo
       );
     }
 
-    const data: Dataset = await response.json();
-
-    const trips = convertDataset(data);
-
-    const directTrips = findDirectTrips(
-      trips,
-      resolvedFrom,
-      resolvedTo
-    );
-
     console.log(
       `GECW Go search: ${resolvedFrom} -> ${resolvedTo}`,
-      `| total trips: ${trips.length}`,
       `| direct trips: ${directTrips.length}`
     );
 
@@ -229,7 +375,7 @@ export async function searchBuses(
     );
   } catch (error) {
     console.error(
-      "Bus dataset failed:",
+      "Bus search failed:",
       error
     );
 
