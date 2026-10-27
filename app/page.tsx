@@ -738,72 +738,20 @@ export default function Home() {
 
                   {/* moving bus */}
 
-                  <g className="scene-bus">
-                    <rect
-                      x="85"
-                      y="125"
-                      width="105"
-                      height="38"
-                      rx="7"
-                      fill="#e53935"
-                    />
+</div>
 
-                    <rect
-                      x="92"
-                      y="132"
-                      width="45"
-                      height="15"
-                      rx="3"
-                      fill="#bfe8ff"
-                    />
-
-                    <rect
-                      x="141"
-                      y="132"
-                      width="39"
-                      height="15"
-                      rx="3"
-                      fill="#bfe8ff"
-                    />
-
-                    <rect
-                      x="180"
-                      y="137"
-                      width="7"
-                      height="12"
-                      fill="#ffcc80"
-                    />
-
-                    <circle
-                      cx="108"
-                      cy="164"
-                      r="8"
-                      fill="#222"
-                    />
-
-                    <circle
-                      cx="167"
-                      cy="164"
-                      r="8"
-                      fill="#222"
-                    />
-
-                    <circle
-                      cx="108"
-                      cy="164"
-                      r="3"
-                      fill="#ddd"
-                    />
-
-                    <circle
-                      cx="167"
-                      cy="164"
-                      r="3"
-                      fill="#ddd"
-                    />
-                  </g>
-                </svg>
-              </div>
+<div className="kerala-scene">
+  <video
+    className="gecw-travel-video"
+    src="/gecw-go-travel.mp4"
+    autoPlay
+    muted
+    loop
+    playsInline
+    preload="auto"
+    aria-label="Bus travelling through Kerala greenery"
+  />
+</div>
             </section>
 
             {/* QUICK ROUTES */}
