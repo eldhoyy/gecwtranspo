@@ -2082,7 +2082,15 @@ export async function searchTransport(
 
   const allTrips =
   dedupeTrips([
+    /*
+     * Private bus dataset
+     */
     ...privateTrips,
+
+    /*
+     * Official KSRTC
+     */
+    ...ksrtcTrips,
   ]);
 
   /*
