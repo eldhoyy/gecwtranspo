@@ -63,13 +63,20 @@ function stationMatches(
   requestedName: string
 ): boolean {
   const station = normalizeName(stationName);
-  const requested = normalizeName(requestedName);
 
-  return (
-    station === requested ||
-    station.includes(requested) ||
-    requested.includes(station)
-  );
+  const variants =
+    getStopNameVariants(requestedName);
+
+  return variants.some((variant) => {
+    const requested =
+      normalizeName(variant);
+
+    return (
+      station === requested ||
+      station.includes(requested) ||
+      requested.includes(station)
+    );
+  });
 }
 
 function convertStations(
