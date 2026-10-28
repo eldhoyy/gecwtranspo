@@ -1755,15 +1755,22 @@ async function fetchFromMyBusYatra(
 function dedupeTrips(
   trips: TransportTrip[]
 ): TransportTrip[] {
-  const seen =
-    new Set<string>();
+  const groups =
+    new Map<string, TransportTrip>();
 
-  const result:
-    TransportTrip[] = [];
+  const sourcePriority: Record<
+    string,
+    number
+  > = {
+    ksrtc: 4,
+    "private-bus-api": 3,
+    "public-transport-api": 2,
+    manual: 1,
+    openstreetmap: 1,
+    "live-feed": 5,
+  };
 
-  for (
-    const trip of trips
-  ) {
+  for (const trip of trips) {
     if (
       !trip.stops ||
       trip.stops.length < 2
@@ -1773,32 +1780,134 @@ function dedupeTrips(
 
     const routeKey =
       trip.stops
-        .map(
-          (stop) =>
-            normalizeName(
-              stop.stop.name
-            )
+        .map((stop) =>
+          normalizeName(
+            stop.stop.name
+          )
         )
         .join("|");
 
-    const key = [
-      trip.operator ?? "",
-      trip.vehicleNumber ?? "",
-      trip.serviceName ?? "",
-      routeKey,
-    ].join("::");
+    const firstStop =
+      normalizeName(
+        trip.stops[0].stop.name
+      );
 
-    if (
-      seen.has(key)
-    ) {
+    const lastStop =
+      normalizeName(
+        trip.stops[
+          trip.stops.length - 1
+        ].stop.name
+      );
+
+    const firstTime =
+      trip.stops[0]
+        .departureTime ??
+      trip.stops[0]
+        .arrivalTime ??
+      "";
+
+    /*
+     * Prefer vehicle number when available.
+     *
+     * Otherwise use operator + route + first
+     * departure time.
+     */
+    const identity =
+      trip.vehicleNumber
+        ? trip.vehicleNumber
+            .toUpperCase()
+            .replace(
+              /\s+/g,
+              ""
+            )
+        : [
+            trip.operator ?? "",
+            firstStop,
+            lastStop,
+            firstTime,
+          ].join("::");
+
+    const key = [
+      identity,
+      routeKey,
+    ].join("###");
+
+    const existing =
+      groups.get(key);
+
+    if (!existing) {
+      groups.set(key, trip);
       continue;
     }
 
-    seen.add(key);
-    result.push(trip);
+    /*
+     * Prefer the higher-quality source.
+     */
+    const currentPriority =
+      sourcePriority[
+        trip.source
+      ] ?? 0;
+
+    const existingPriority =
+      sourcePriority[
+        existing.source
+      ] ?? 0;
+
+    if (
+      currentPriority >
+      existingPriority
+    ) {
+      groups.set(key, {
+        ...trip,
+
+        /*
+         * Preserve live information if the
+         * previous source had it.
+         */
+        isLive:
+          trip.isLive ??
+          existing.isLive,
+
+        lastUpdated:
+          trip.lastUpdated ??
+          existing.lastUpdated,
+      });
+
+      continue;
+    }
+
+    /*
+     * If the existing source is better,
+     * still enrich missing information.
+     */
+    groups.set(key, {
+      ...existing,
+
+      vehicleNumber:
+        existing.vehicleNumber ??
+        trip.vehicleNumber,
+
+      serviceName:
+        existing.serviceName ??
+        trip.serviceName,
+
+      operator:
+        existing.operator ??
+        trip.operator,
+
+      isLive:
+        existing.isLive ??
+        trip.isLive,
+
+      lastUpdated:
+        existing.lastUpdated ??
+        trip.lastUpdated,
+    });
   }
 
-  return result;
+  return Array.from(
+    groups.values()
+  );
 }
 
 /* =========================================================
