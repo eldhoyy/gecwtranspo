@@ -1439,3 +1439,238 @@ html {
     height: 145px;
   }
 }
+/* =========================================================
+   GECW GO - NEW BUS RESULT DETAILS
+   ========================================================= */
+
+.bus-service-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 4px;
+}
+
+.bus-service-info span {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.dark-theme .bus-service-info span {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.bus-result-card.selected-bus {
+  border-color: #c9382c;
+}
+
+.bus-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.route-details-button {
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+  border-radius: 8px;
+  padding: 8px 13px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.route-details-button:hover {
+  transform: translateY(-1px);
+}
+
+.route-details-button:active {
+  transform: translateY(0);
+}
+
+.journey-route-details {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.035);
+}
+
+.dark-theme .journey-route-details {
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.journey-route-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.journey-route-header strong {
+  font-size: 0.9rem;
+}
+
+.journey-route-header span {
+  font-size: 0.75rem;
+  opacity: 0.65;
+}
+
+.journey-stops {
+  display: flex;
+  flex-direction: column;
+}
+
+.journey-stop {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 48px;
+}
+
+.journey-stop-marker {
+  position: relative;
+  width: 24px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.journey-stop-marker::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: currentColor;
+  opacity: 0.18;
+}
+
+.journey-stop:first-child
+.journey-stop-marker::before {
+  top: 50%;
+}
+
+.journey-stop:last-child
+.journey-stop-marker::before {
+  bottom: 50%;
+}
+
+.journey-stop-marker span {
+  position: relative;
+  z-index: 1;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  background: #ffffff;
+}
+
+.dark-theme
+.journey-stop-marker span {
+  background: #1b1b1b;
+}
+
+.journey-stop-marker span.start,
+.journey-stop-marker span.end {
+  width: 12px;
+  height: 12px;
+}
+
+.journey-stop-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 6px 10px;
+}
+
+.journey-stop-name strong {
+  font-size: 0.82rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.journey-stop-name small {
+  margin-top: 2px;
+  font-size: 0.68rem;
+  opacity: 0.58;
+}
+
+.journey-stop-time {
+  font-size: 0.75rem;
+  font-weight: 700;
+  opacity: 0.7;
+  white-space: nowrap;
+}
+
+.departed-message {
+  margin-top: 10px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  background: rgba(180, 70, 40, 0.08);
+}
+
+.dark-theme .departed-message {
+  background: rgba(180, 70, 40, 0.14);
+}
+
+@media (max-width: 650px) {
+  .bus-result-bottom {
+    flex-wrap: wrap;
+    gap: 7px 12px;
+  }
+
+  .journey-stop {
+    grid-template-columns: 22px minmax(0, 1fr) auto;
+  }
+
+  .journey-stop-name strong {
+    white-space: normal;
+  }
+
+  .route-details-button {
+    width: 100%;
+  }
+}
+
+
+/* =========================================================
+   GECW GO - TRAVEL VIDEO
+   ========================================================= */
+
+.gecw-travel-video {
+  display: block;
+  width: min(100%, 360px);
+  height: auto;
+  max-height: 190px;
+  object-fit: contain;
+  border: 0;
+  outline: none;
+  background: transparent;
+}
+
+.kerala-scene {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+@media (max-width: 650px) {
+  .gecw-travel-video {
+    width: min(100%, 300px);
+    max-height: 160px;
+  }
+}
