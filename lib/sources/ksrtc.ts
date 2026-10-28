@@ -3,245 +3,942 @@ import type {
   TransportTrip,
 } from "../types";
 
+const KSRTC_LIST_URL =
+  "https://www.ksrtcedp.com/route/resultmapksrtc.php?placeid=63";
+
 const KSRTC_BASE_URL =
   "https://www.ksrtcedp.com";
 
-const KSRTC_ROUTE_URL =
-  `${KSRTC_BASE_URL}/route/resultmapksrtc.php?placeid=63`;
-
-type KsrtcRow = {
+type KsrtcDetailLink = {
+  url: string;
   id: string;
-  departure: string;
-  origin: string;
-  serviceType: string;
-  destination: string;
-  phone?: string;
-  via?: string;
-  returnTime?: string;
 };
 
 function normalize(value: string): string {
   return value
     .toLowerCase()
-    .replace(/[().,'’`-]/g, " ")
+    .replace(/[.,/()'’`-]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function clean(value: string): string {
+function slugify(value: string): string {
+  return normalize(value)
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function decodeHtml(value: string): string {
   return value
-    .replace(/\s+/g, " ")
-    .replace(/\|/g, "")
-    .trim();
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&apos;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&#(\d+);/g, (_, code) =>
+      String.fromCharCode(
+        Number(code)
+      )
+    );
 }
 
-function matchesStop(
-  actual: string,
-  searched: string
-): boolean {
-  const a = normalize(actual);
-  const b = normalize(searched);
-
-  return (
-    a === b ||
-    a.includes(b) ||
-    b.includes(a)
-  );
+function cleanHtmlText(
+  html: string
+): string {
+  return decodeHtml(
+    html
+      .replace(
+        /<script[\s\S]*?<\/script>/gi,
+        " "
+      )
+      .replace(
+        /<style[\s\S]*?<\/style>/gi,
+        " "
+      )
+      .replace(
+        /<br\s*\/?>/gi,
+        "\n"
+      )
+      .replace(
+        /<\/(td|th|tr|li|p|div|h[1-6])>/gi,
+        "\n"
+      )
+      .replace(/<[^>]+>/g, " ")
+  )
+    .replace(/\r/g, "")
+    .split("\n")
+    .map((line) =>
+      line.replace(/\s+/g, " ").trim()
+    )
+    .filter(Boolean)
+    .join("\n");
 }
 
-function extractTime(value: string): string | null {
+function normalizeTime(
+  value: string
+): string | null {
   const match = value.match(
-    /\b([01]?\d|2[0-3]):([0-5]\d)\b/
+    /\b(\d{1,2}):(\d{2})\b/
   );
 
   if (!match) {
     return null;
   }
 
-  return `${match[1].padStart(2, "0")}:${match[2]}`;
+  const hour =
+    Number(match[1]);
+
+  const minute =
+    Number(match[2]);
+
+  if (
+    hour < 0 ||
+    hour > 23 ||
+    minute < 0 ||
+    minute > 59
+  ) {
+    return null;
+  }
+
+  return (
+    `${hour.toString().padStart(2, "0")}:` +
+    `${minute.toString().padStart(2, "0")}`
+  );
 }
 
-function extractRows(html: string): KsrtcRow[] {
-  const rows: KsrtcRow[] = [];
+function makeStop(
+  name: string
+): ScheduledStop {
+  return {
+    stop: {
+      id:
+        `ksrtc-${slugify(name)}`,
+      name,
+      placeName: name,
+    },
+    sequence: 0,
+    arrivalTime: null,
+    departureTime: null,
+  };
+}
 
-  /*
-   * The official KSRTC page is rendered as repeated
-   * service blocks. We deliberately parse only the
-   * information that the official listing actually exposes.
-   *
-   * We do NOT invent intermediate stops here.
-   */
+/*
+ * =========================================================
+ * FIND OFFICIAL KSRTC DETAIL LINKS
+ * =========================================================
+ *
+ * The main KSRTC page lists the services.
+ *
+ * Each service has a link similar to:
+ *
+ * viewshedulepass.php?... 
+ *
+ * That detail page contains:
+ *
+ * "Passing through stations"
+ *
+ * with the complete ordered route.
+ *
+ * This is the important part.
+ * =========================================================
+ */
 
-  const blockRegex =
-    /<h5[^>]*>\s*([^<]+?)\s*<\/h5>[\s\S]{0,2500}?<h6[^>]*>\s*([^<]+?)\s*<\/h6>[\s\S]{0,2500}?<h6[^>]*>\s*([^<]+?)\s*<\/h6>/gi;
+function extractDetailLinks(
+  html: string
+): KsrtcDetailLink[] {
+  const result: KsrtcDetailLink[] = [];
+
+  const seen =
+    new Set<string>();
+
+  const regex =
+    /href\s*=\s*["']([^"']*viewshedulepass\.php[^"']*)["']/gi;
 
   let match: RegExpExecArray | null;
-  let index = 0;
 
-  while ((match = blockRegex.exec(html))) {
-    const first = clean(match[1]);
-    const serviceType = clean(match[2]);
-    const second = clean(match[3]);
+  while (
+    (match = regex.exec(html))
+  ) {
+    let url =
+      decodeHtml(match[1]);
 
-    const departure =
-      extractTime(first);
+    if (
+      !url.startsWith("http")
+    ) {
+      if (
+        url.startsWith("/")
+      ) {
+        url =
+          `${KSRTC_BASE_URL}${url}`;
+      } else {
+        url =
+          `${KSRTC_BASE_URL}/route/${url}`;
+      }
+    }
 
-    if (!departure) {
+    /*
+     * Remove duplicate links.
+     */
+
+    if (seen.has(url)) {
+      continue;
+    }
+
+    seen.add(url);
+
+    result.push({
+      url,
+      id:
+        `ksrtc-detail-${result.length}`,
+    });
+  }
+
+  return result;
+}
+
+/*
+ * =========================================================
+ * EXTRACT TABLE ROWS FROM OFFICIAL DETAIL PAGE
+ * =========================================================
+ *
+ * Official detail pages contain:
+ *
+ * Sl. No.
+ * Place
+ * Arrival Time
+ * Departure Time
+ *
+ * Example:
+ *
+ * MANANTHAVADY 00:00 16:25
+ * PANAMARAM    16:55 16:55
+ * KALPETTA     17:10 17:10
+ *
+ * We parse table rows directly.
+ * =========================================================
+ */
+
+function extractPassingStations(
+  html: string
+): ScheduledStop[] {
+  const stops: ScheduledStop[] = [];
+
+  /*
+   * First try actual <tr> rows.
+   */
+
+  const rowRegex =
+    /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+
+  let rowMatch: RegExpExecArray | null;
+
+  while (
+    (rowMatch =
+      rowRegex.exec(html))
+  ) {
+    const rowHtml =
+      rowMatch[1];
+
+    const cells: string[] = [];
+
+    const cellRegex =
+      /<(?:td|th)[^>]*>([\s\S]*?)<\/(?:td|th)>/gi;
+
+    let cellMatch:
+      | RegExpExecArray
+      | null;
+
+    while (
+      (cellMatch =
+        cellRegex.exec(rowHtml))
+    ) {
+      const text =
+        decodeHtml(
+          cellMatch[1]
+            .replace(
+              /<[^>]+>/g,
+              " "
+            )
+        )
+          .replace(/\s+/g, " ")
+          .trim();
+
+      cells.push(text);
+    }
+
+    if (
+      cells.length < 3
+    ) {
       continue;
     }
 
     /*
-     * The official page structure can vary slightly.
-     * Therefore try to identify origin/destination
-     * from the surrounding block.
+     * Ignore header rows.
      */
 
-    const surrounding =
-      html.slice(
-        Math.max(0, match.index - 200),
-        Math.min(
-          html.length,
-          match.index + match[0].length + 2200
+    const firstCell =
+      normalize(cells[0]);
+
+    if (
+      firstCell === "sl no" ||
+      firstCell === "sl no."
+    ) {
+      continue;
+    }
+
+    /*
+     * Usually:
+     *
+     * [0] serial
+     * [1] place
+     * [2] arrival
+     * [3] departure
+     *
+     * But some pages may omit serial.
+     *
+     * Detect the place/time positions.
+     */
+
+    let place =
+      "";
+    let arrival:
+      string | null = null;
+    let departure:
+      string | null = null;
+
+    for (
+      let i = 0;
+      i < cells.length;
+      i++
+    ) {
+      const time =
+        normalizeTime(
+          cells[i]
+        );
+
+      if (
+        time &&
+        !arrival
+      ) {
+        arrival = time;
+        continue;
+      }
+
+      if (
+        time &&
+        arrival &&
+        !departure
+      ) {
+        departure = time;
+        continue;
+      }
+
+      if (
+        !place &&
+        cells[i] &&
+        !/^\d+$/.test(
+          cells[i]
+        ) &&
+        !normalizeTime(
+          cells[i]
         )
+      ) {
+        place = cells[i];
+      }
+    }
+
+    if (!place) {
+      continue;
+    }
+
+    /*
+     * Avoid accidentally interpreting the service
+     * header as a station.
+     */
+
+    const ignored = [
+      "place",
+      "arrival time",
+      "departure time",
+      "passing through stations",
+      "source",
+      "destination",
+      "via",
+      "bus type",
+    ];
+
+    if (
+      ignored.includes(
+        normalize(place)
+      )
+    ) {
+      continue;
+    }
+
+    stops.push({
+      stop: {
+        id:
+          `ksrtc-${slugify(
+            place
+          )}`,
+        name: place,
+        placeName: place,
+      },
+
+      sequence:
+        stops.length,
+
+      arrivalTime:
+        arrival,
+
+      departureTime:
+        departure ?? arrival,
+    });
+  }
+
+  /*
+   * If table parsing didn't work, use the text
+   * representation as a fallback.
+   */
+
+  if (
+    stops.length < 2
+  ) {
+    return extractPassingStationsFromText(
+      html
+    );
+  }
+
+  return dedupeStops(
+    stops
+  );
+}
+
+function extractPassingStationsFromText(
+  html: string
+): ScheduledStop[] {
+  const text =
+    cleanHtmlText(html);
+
+  const lines =
+    text
+      .split("\n")
+      .map((line) =>
+        line.trim()
+      )
+      .filter(Boolean);
+
+  const result:
+    ScheduledStop[] = [];
+
+  let started =
+    false;
+
+  for (
+    let i = 0;
+    i < lines.length;
+    i++
+  ) {
+    const line =
+      lines[i];
+
+    if (
+      normalize(line).includes(
+        "passing through stations"
+      )
+    ) {
+      started = true;
+      continue;
+    }
+
+    if (!started) {
+      continue;
+    }
+
+    /*
+     * Stop reading when the page moves
+     * to another major section.
+     */
+
+    if (
+      normalize(line) ===
+        "image" ||
+      normalize(line).includes(
+        "fare"
+      )
+    ) {
+      if (
+        result.length >= 2
+      ) {
+        break;
+      }
+    }
+
+    const timeMatches =
+      [
+        ...line.matchAll(
+          /\b(\d{1,2}):(\d{2})\b/g
+        ),
+      ];
+
+    if (
+      timeMatches.length === 0
+    ) {
+      continue;
+    }
+
+    const time =
+      normalizeTime(
+        timeMatches[0][0]
       );
 
-    const times = [
-      ...surrounding.matchAll(
-        /\b([01]?\d|2[0-3]):([0-5]\d)\b/g
-      ),
-    ];
+    if (!time) {
+      continue;
+    }
 
-    const uniqueTimes = [
-      ...new Set(
-        times.map(
-          (x) =>
-            `${x[1].padStart(2, "0")}:${x[2]}`
-        )
-      ),
-    ];
-
-    const destinationCandidate =
-      second
+    const place =
+      line
         .replace(
-          /\b([01]?\d|2[0-3]):([0-5]\d)\b/g,
+          /\b\d{1,2}:\d{2}\b/g,
+          ""
+        )
+        .replace(
+          /^\d+\s*/,
           ""
         )
         .trim();
 
-    if (!first || !destinationCandidate) {
+    if (
+      !place ||
+      /^\d+$/.test(place)
+    ) {
       continue;
     }
 
-    rows.push({
-      id:
-        `ksrtc-official-${index++}-` +
-        `${normalize(first)}-` +
-        `${normalize(destinationCandidate)}`,
-      departure,
-      origin: first
-        .replace(
-          /\b([01]?\d|2[0-3]):([0-5]\d)\b/g,
-          ""
-        )
-        .trim(),
-      serviceType,
-      destination:
-        destinationCandidate,
-      via:
-        surrounding
-          .match(
-            /([A-Z][A-Z0-9 .&-]{2,})\s*\|\s*[A-Z0-9-]+(?:-[A-Z0-9-]+)+/
-          )?.[1]
-          ?.trim(),
-      returnTime:
-        uniqueTimes.length > 1
-          ? uniqueTimes[uniqueTimes.length - 1]
-          : undefined,
+    result.push({
+      stop: {
+        id:
+          `ksrtc-${slugify(
+            place
+          )}`,
+        name: place,
+        placeName: place,
+      },
+
+      sequence:
+        result.length,
+
+      arrivalTime: time,
+
+      departureTime: time,
     });
   }
 
-  return rows;
-}
-
-function rowToTrip(
-  row: KsrtcRow
-): TransportTrip {
-  const originStop = {
-    id:
-      `ksrtc-${normalize(row.origin)
-        .replace(/\s+/g, "-")}`,
-    name: row.origin,
-    placeName: row.origin,
-  };
-
-  const destinationStop = {
-    id:
-      `ksrtc-${normalize(row.destination)
-        .replace(/\s+/g, "-")}`,
-    name: row.destination,
-    placeName: row.destination,
-  };
-
-  const stops: ScheduledStop[] = [
-    {
-      stop: originStop,
-      sequence: 0,
-      arrivalTime: null,
-      departureTime: row.departure,
-    },
-    {
-      stop: destinationStop,
-      sequence: 1,
-      arrivalTime: row.returnTime ?? null,
-      departureTime: null,
-    },
-  ];
-
-  return {
-    id: row.id,
-    vehicleNumber: undefined,
-    serviceName:
-      `${row.origin} → ${row.destination}`,
-    operator: "KSRTC",
-    mode: "bus",
-    source: "ksrtc",
-    stops,
-    isLive: false,
-  };
-}
-
-async function fetchOfficialKsrtcPage(): Promise<string> {
-  const response = await fetch(
-    KSRTC_ROUTE_URL,
-    {
-      cache: "no-store",
-      headers: {
-        Accept:
-          "text/html,application/xhtml+xml",
-      },
-    }
+  return dedupeStops(
+    result
   );
+}
 
-  if (!response.ok) {
-    throw new Error(
-      `KSRTC request failed: ${response.status}`
+function dedupeStops(
+  stops: ScheduledStop[]
+): ScheduledStop[] {
+  const seen =
+    new Set<string>();
+
+  return stops
+    .filter((stop) => {
+      const key =
+        normalize(
+          stop.stop.name
+        );
+
+      if (
+        !key ||
+        seen.has(key)
+      ) {
+        return false;
+      }
+
+      seen.add(key);
+      return true;
+    })
+    .map(
+      (stop, index) => ({
+        ...stop,
+        sequence: index,
+      })
     );
+}
+
+/*
+ * =========================================================
+ * SERVICE METADATA
+ * =========================================================
+ */
+
+function extractServiceMetadata(
+  html: string
+) {
+  const text =
+    cleanHtmlText(html);
+
+  const lines =
+    text
+      .split("\n")
+      .map((line) =>
+        line.trim()
+      )
+      .filter(Boolean);
+
+  let source = "";
+  let destination = "";
+  let via = "";
+  let busType = "";
+
+  const scheduleLine =
+    lines.find((line) =>
+      /\bMANANTHAVADY\b/i.test(
+        line
+      )
+    );
+
+  /*
+   * Look around the "Schedule information"
+   * section instead of depending on one exact
+   * HTML layout.
+   */
+
+  const scheduleIndex =
+    lines.findIndex((line) =>
+      normalize(line).includes(
+        "shedule information"
+      )
+    );
+
+  if (
+    scheduleIndex >= 0
+  ) {
+    const area =
+      lines.slice(
+        scheduleIndex,
+        scheduleIndex + 20
+      );
+
+    const timeIndex =
+      area.findIndex((line) =>
+        /\b\d{1,2}:\d{2}\b/.test(
+          line
+        )
+      );
+
+    if (
+      timeIndex >= 0
+    ) {
+      /*
+       * The detailed table itself will give us
+       * the authoritative first and last stop,
+       * so metadata here is only supplementary.
+       */
+
+      source =
+        area
+          .find(
+            (line) =>
+              normalize(
+                line
+              ) ===
+              "source"
+          ) ??
+        "";
+
+      destination =
+        area
+          .find(
+            (line) =>
+              normalize(
+                line
+              ) ===
+              "destination"
+          ) ??
+        "";
+    }
   }
 
-  return response.text();
+  /*
+   * Service type is usually visible as:
+   *
+   * FAST
+   * SUPER FAST
+   * SUPER EXPRESS
+   * ORDINARY
+   * etc.
+   */
+
+  const serviceTypes = [
+    "SUPER DELUXE",
+    "SUPER EXPRESS",
+    "SUPER FAST",
+    "SILVER LINE JET",
+    "PREMIUM SUPERFAST",
+    "L S SUPER FAST",
+    "LS FAST",
+    "FAST PASSENGER",
+    "FAST",
+    "ORDINARY",
+  ];
+
+  for (
+    const type of serviceTypes
+  ) {
+    if (
+      new RegExp(
+        `\\b${type.replace(
+          / /g,
+          "\\s+"
+        )}\\b`,
+        "i"
+      ).test(text)
+    ) {
+      busType = type;
+      break;
+    }
+  }
+
+  return {
+    source,
+    destination,
+    via,
+    busType,
+    scheduleLine,
+  };
 }
+
+/*
+ * =========================================================
+ * DETAIL PAGE -> TRANSPORT TRIP
+ * =========================================================
+ */
+
+async function fetchKsrtcDetail(
+  link: KsrtcDetailLink
+): Promise<TransportTrip | null> {
+  try {
+    const response =
+      await fetch(
+        link.url,
+        {
+          headers: {
+            Accept:
+              "text/html,application/xhtml+xml",
+          },
+          cache: "no-store",
+        }
+      );
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const html =
+      await response.text();
+
+    const stops =
+      extractPassingStations(
+        html
+      );
+
+    /*
+     * A valid KSRTC detail page should have
+     * at least two ordered stations.
+     */
+
+    if (
+      stops.length < 2
+    ) {
+      return null;
+    }
+
+    const metadata =
+      extractServiceMetadata(
+        html
+      );
+
+    const firstStop =
+      stops[0]?.stop.name ??
+      "KSRTC";
+
+    const lastStop =
+      stops[
+        stops.length - 1
+      ]?.stop.name ??
+      "Service";
+
+    /*
+     * Try to obtain the official schedule
+     * departure time from the first stop.
+     */
+
+    const departure =
+      stops[0]
+        ?.departureTime ??
+      null;
+
+    const routeKey =
+      stops
+        .map(
+          (stop) =>
+            normalize(
+              stop.stop.name
+            )
+        )
+        .join("-");
+
+    return {
+      id:
+        `ksrtc-${slugify(
+          `${firstStop}-${lastStop}-${routeKey}-${link.id}`
+        )}`,
+
+      vehicleNumber:
+        undefined,
+
+      serviceName:
+        `${firstStop} → ${lastStop}`,
+
+      operator:
+        "KSRTC",
+
+      mode:
+        "bus",
+
+      source:
+        "ksrtc",
+
+      stops,
+
+      isLive:
+        false,
+
+      lastUpdated:
+        new Date().toISOString(),
+    };
+  } catch (error) {
+    console.warn(
+      "KSRTC detail failed:",
+      link.url,
+      error
+    );
+
+    return null;
+  }
+}
+
+/*
+ * =========================================================
+ * GET ALL OFFICIAL KSRTC TRIPS
+ * =========================================================
+ */
 
 export async function fetchAllKsrtcTrips(): Promise<
   TransportTrip[]
 > {
   try {
+    const response =
+      await fetch(
+        KSRTC_LIST_URL,
+        {
+          headers: {
+            Accept:
+              "text/html,application/xhtml+xml",
+          },
+          cache: "no-store",
+        }
+      );
+
+    if (!response.ok) {
+      console.warn(
+        "KSRTC list status:",
+        response.status
+      );
+
+      return [];
+    }
+
     const html =
-      await fetchOfficialKsrtcPage();
+      await response.text();
 
-    const rows =
-      extractRows(html);
+    const links =
+      extractDetailLinks(
+        html
+      );
 
-    return rows.map(rowToTrip);
+    console.log(
+      "KSRTC official detail links:",
+      links.length
+    );
+
+    if (
+      links.length === 0
+    ) {
+      console.warn(
+        "No KSRTC detail links found."
+      );
+
+      return [];
+    }
+
+    /*
+     * Fetch detail pages concurrently,
+     * but in controlled batches.
+     *
+     * 288 services does NOT mean we should
+     * fire 288 requests simultaneously.
+     */
+
+    const trips:
+      TransportTrip[] = [];
+
+    const batchSize =
+      8;
+
+    for (
+      let i = 0;
+      i < links.length;
+      i += batchSize
+    ) {
+      const batch =
+        links.slice(
+          i,
+          i + batchSize
+        );
+
+      const results =
+        await Promise.all(
+          batch.map(
+            (link) =>
+              fetchKsrtcDetail(
+                link
+              )
+          )
+        );
+
+      for (
+        const trip of results
+      ) {
+        if (trip) {
+          trips.push(trip);
+        }
+      }
+    }
+
+    console.log(
+      "KSRTC parsed trips:",
+      trips.length
+    );
+
+    return trips;
   } catch (error) {
     console.error(
       "KSRTC source error:",
@@ -252,6 +949,32 @@ export async function fetchAllKsrtcTrips(): Promise<
   }
 }
 
+/*
+ * =========================================================
+ * SEARCH KSRTC TRIPS
+ * =========================================================
+ *
+ * IMPORTANT:
+ *
+ * We search the COMPLETE official route.
+ *
+ * Therefore:
+ *
+ * MANANTHAVADY -> KALPETTA
+ *
+ * works when:
+ *
+ * MANANTHAVADY
+ * PANAMARAM
+ * KALPETTA
+ *
+ * exists in the official route.
+ *
+ * The same mechanism works for EVERY intermediate stop
+ * present in the official KSRTC schedule.
+ * =========================================================
+ */
+
 export async function getKsrtcTrips(
   from: string,
   to: string
@@ -259,27 +982,51 @@ export async function getKsrtcTrips(
   const trips =
     await fetchAllKsrtcTrips();
 
-  return trips.filter((trip) => {
-    const fromIndex =
-      trip.stops.findIndex((stop) =>
-        matchesStop(
-          stop.stop.name,
-          from
-        )
-      );
+  const fromName =
+    normalize(from);
 
-    const toIndex =
-      trip.stops.findIndex((stop) =>
-        matchesStop(
-          stop.stop.name,
-          to
-        )
-      );
+  const toName =
+    normalize(to);
 
-    return (
-      fromIndex >= 0 &&
-      toIndex >= 0 &&
-      fromIndex < toIndex
-    );
-  });
+  return trips.filter(
+    (trip) => {
+      const fromIndex =
+        trip.stops.findIndex(
+          (stop) =>
+            normalize(
+              stop.stop.name
+            ) === fromName ||
+            normalize(
+              stop.stop.name
+            ).includes(fromName) ||
+            fromName.includes(
+              normalize(
+                stop.stop.name
+              )
+            )
+        );
+
+      const toIndex =
+        trip.stops.findIndex(
+          (stop) =>
+            normalize(
+              stop.stop.name
+            ) === toName ||
+            normalize(
+              stop.stop.name
+            ).includes(toName) ||
+            toName.includes(
+              normalize(
+                stop.stop.name
+              )
+            )
+        );
+
+      return (
+        fromIndex >= 0 &&
+        toIndex >= 0 &&
+        fromIndex < toIndex
+      );
+    }
+  );
 }
