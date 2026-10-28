@@ -198,6 +198,38 @@ export const COMMON_STOPS: SearchStop[] = [
       "Kochi",
     ],
   },
+  {
+  id: "kakkayangad",
+  name: "KAKKAYANGAD",
+  aliases: [
+    "Kakkayangad",
+    "Kakkayangad Bus Stop",
+  ],
+},
+{
+  id: "ambayathode",
+  name: "AMBAYATHODE",
+  aliases: [
+    "Ambayathode",
+    "Ambayathode Bus Stop",
+  ],
+},
+{
+  id: "niravilpuzha",
+  name: "NIRAVILPUZHA",
+  aliases: [
+    "Niravilpuzha",
+    "Niravilpuzha Bus Stop",
+  ],
+},
+{
+  id: "thiruvambady",
+  name: "THIRUVAMBADY",
+  aliases: [
+    "Thiruvambady",
+    "Thiruvambady Bus Stand",
+  ],
+},
 ];
 
 export function normalizeStopName(value: string): string {
