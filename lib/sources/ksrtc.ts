@@ -974,59 +974,112 @@ export async function fetchAllKsrtcTrips(): Promise<
  * present in the official KSRTC schedule.
  * =========================================================
  */
+let ksrtcRouteCache: {
+  trips: TransportTrip[];
+  expiresAt: number;
+} | null = null;
+
+let ksrtcLoading: Promise<TransportTrip[]> | null = null;
+
+const KSRTC_CACHE_TIME = 1000 * 60 * 60; // 1 hour
 
 export async function getKsrtcTrips(
   from: string,
   to: string
 ): Promise<TransportTrip[]> {
-  const trips =
-    await fetchAllKsrtcTrips();
+  const now = Date.now();
 
-  const fromName =
-    normalize(from);
+  // Use the already-loaded complete KSRTC route database.
+  if (
+    ksrtcRouteCache &&
+    ksrtcRouteCache.expiresAt > now
+  ) {
+    return findKsrtcDirectTrips(
+      ksrtcRouteCache.trips,
+      from,
+      to
+    );
+  }
 
-  const toName =
-    normalize(to);
+  // Prevent multiple searches from downloading
+  // the complete KSRTC database simultaneously.
+  if (!ksrtcLoading) {
+    ksrtcLoading = fetchAllKsrtcTrips()
+      .then((trips) => {
+        ksrtcRouteCache = {
+          trips,
+          expiresAt:
+            Date.now() +
+            KSRTC_CACHE_TIME,
+        };
 
-  return trips.filter(
-    (trip) => {
-      const fromIndex =
-        trip.stops.findIndex(
-          (stop) =>
-            normalize(
-              stop.stop.name
-            ) === fromName ||
-            normalize(
-              stop.stop.name
-            ).includes(fromName) ||
-            fromName.includes(
-              normalize(
-                stop.stop.name
-              )
-            )
-        );
+        return trips;
+      })
+      .finally(() => {
+        ksrtcLoading = null;
+      });
+  }
 
-      const toIndex =
-        trip.stops.findIndex(
-          (stop) =>
-            normalize(
-              stop.stop.name
-            ) === toName ||
-            normalize(
-              stop.stop.name
-            ).includes(toName) ||
-            toName.includes(
-              normalize(
-                stop.stop.name
-              )
-            )
-        );
+  const trips = await ksrtcLoading;
 
-      return (
-        fromIndex >= 0 &&
-        toIndex >= 0 &&
-        fromIndex < toIndex
-      );
-    }
+  return findKsrtcDirectTrips(
+    trips,
+    from,
+    to
   );
+}
+function findKsrtcDirectTrips(
+  trips: TransportTrip[],
+  from: string,
+  to: string
+): TransportTrip[] {
+  const fromName = normalize(from);
+  const toName = normalize(to);
+
+  return trips.filter((trip) => {
+    if (
+      !trip.stops ||
+      trip.stops.length < 2
+    ) {
+      return false;
+    }
+
+    const fromIndex =
+      trip.stops.findIndex(
+        (stop) =>
+          normalize(
+            stop.stop.name
+          ) === fromName ||
+          normalize(
+            stop.stop.name
+          ).includes(fromName) ||
+          fromName.includes(
+            normalize(
+              stop.stop.name
+            )
+          )
+      );
+
+    const toIndex =
+      trip.stops.findIndex(
+        (stop) =>
+          normalize(
+            stop.stop.name
+          ) === toName ||
+          normalize(
+            stop.stop.name
+          ).includes(toName) ||
+          toName.includes(
+            normalize(
+              stop.stop.name
+            )
+          )
+      );
+
+    return (
+      fromIndex >= 0 &&
+      toIndex >= 0 &&
+      fromIndex < toIndex
+    );
+  });
 }
