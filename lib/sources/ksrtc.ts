@@ -6,19 +6,18 @@ import type {
 const KSRTC_BASE_URL =
   "https://www.ksrtcedp.com";
 
-type KsrtcStop = {
-  place: string;
-  arrivalTime: string | null;
-  departureTime: string | null;
-};
+const KSRTC_ROUTE_URL =
+  `${KSRTC_BASE_URL}/route/resultmapksrtc.php?placeid=63`;
 
-type KsrtcService = {
+type KsrtcRow = {
   id: string;
-  serviceName: string;
-  busType: string;
+  departure: string;
   origin: string;
+  serviceType: string;
   destination: string;
-  route: KsrtcStop[];
+  phone?: string;
+  via?: string;
+  returnTime?: string;
 };
 
 function normalize(value: string): string {
@@ -26,6 +25,13 @@ function normalize(value: string): string {
     .toLowerCase()
     .replace(/[().,'’`-]/g, " ")
     .replace(/\s+/g, " ")
+    .trim();
+}
+
+function clean(value: string): string {
+  return value
+    .replace(/\s+/g, " ")
+    .replace(/\|/g, "")
     .trim();
 }
 
@@ -43,239 +49,237 @@ function matchesStop(
   );
 }
 
-function stopIndex(
-  route: KsrtcStop[],
-  name: string
-): number {
-  return route.findIndex((stop) =>
-    matchesStop(stop.place, name)
+function extractTime(value: string): string | null {
+  const match = value.match(
+    /\b([01]?\d|2[0-3]):([0-5]\d)\b/
   );
+
+  if (!match) {
+    return null;
+  }
+
+  return `${match[1].padStart(2, "0")}:${match[2]}`;
 }
 
-function createStops(
-  route: KsrtcStop[]
-): ScheduledStop[] {
-  return route.map((stop, index) => ({
-    stop: {
-      id: `ksrtc-${normalize(stop.place)
-        .replace(/\s+/g, "-")}`,
-      name: stop.place,
-      placeName: stop.place,
-    },
-    sequence: index,
-    arrivalTime: stop.arrivalTime,
-    departureTime: stop.departureTime,
-  }));
+function extractRows(html: string): KsrtcRow[] {
+  const rows: KsrtcRow[] = [];
+
+  /*
+   * The official KSRTC page is rendered as repeated
+   * service blocks. We deliberately parse only the
+   * information that the official listing actually exposes.
+   *
+   * We do NOT invent intermediate stops here.
+   */
+
+  const blockRegex =
+    /<h5[^>]*>\s*([^<]+?)\s*<\/h5>[\s\S]{0,2500}?<h6[^>]*>\s*([^<]+?)\s*<\/h6>[\s\S]{0,2500}?<h6[^>]*>\s*([^<]+?)\s*<\/h6>/gi;
+
+  let match: RegExpExecArray | null;
+  let index = 0;
+
+  while ((match = blockRegex.exec(html))) {
+    const first = clean(match[1]);
+    const serviceType = clean(match[2]);
+    const second = clean(match[3]);
+
+    const departure =
+      extractTime(first);
+
+    if (!departure) {
+      continue;
+    }
+
+    /*
+     * The official page structure can vary slightly.
+     * Therefore try to identify origin/destination
+     * from the surrounding block.
+     */
+
+    const surrounding =
+      html.slice(
+        Math.max(0, match.index - 200),
+        Math.min(
+          html.length,
+          match.index + match[0].length + 2200
+        )
+      );
+
+    const times = [
+      ...surrounding.matchAll(
+        /\b([01]?\d|2[0-3]):([0-5]\d)\b/g
+      ),
+    ];
+
+    const uniqueTimes = [
+      ...new Set(
+        times.map(
+          (x) =>
+            `${x[1].padStart(2, "0")}:${x[2]}`
+        )
+      ),
+    ];
+
+    const destinationCandidate =
+      second
+        .replace(
+          /\b([01]?\d|2[0-3]):([0-5]\d)\b/g,
+          ""
+        )
+        .trim();
+
+    if (!first || !destinationCandidate) {
+      continue;
+    }
+
+    rows.push({
+      id:
+        `ksrtc-official-${index++}-` +
+        `${normalize(first)}-` +
+        `${normalize(destinationCandidate)}`,
+      departure,
+      origin: first
+        .replace(
+          /\b([01]?\d|2[0-3]):([0-5]\d)\b/g,
+          ""
+        )
+        .trim(),
+      serviceType,
+      destination:
+        destinationCandidate,
+      via:
+        surrounding
+          .match(
+            /([A-Z][A-Z0-9 .&-]{2,})\s*\|\s*[A-Z0-9-]+(?:-[A-Z0-9-]+)+/
+          )?.[1]
+          ?.trim(),
+      returnTime:
+        uniqueTimes.length > 1
+          ? uniqueTimes[uniqueTimes.length - 1]
+          : undefined,
+    });
+  }
+
+  return rows;
 }
 
-/*
- * IMPORTANT:
- * These are real route structures from KSRTC schedule data.
- *
- * Add more services here as they are verified from
- * the official KSRTC schedule source.
- */
-const KSRTC_SERVICES: KsrtcService[] = [
-  {
-    id: "ksrtc-mananthavady-trivandrum-1625",
-    serviceName: "MANANTHAVADY - TRIVANDRUM",
-    busType: "SEXP",
-    origin: "MANANTHAVADY",
-    destination: "TRIVANDRUM",
-
-    route: [
-      {
-        place: "MANANTHAVADY",
-        arrivalTime: null,
-        departureTime: "16:25",
-      },
-      {
-        place: "PANAMARAM",
-        arrivalTime: "16:55",
-        departureTime: "16:55",
-      },
-      {
-        place: "KALPETTA",
-        arrivalTime: "17:10",
-        departureTime: "17:10",
-      },
-      {
-        place: "VYTHIRI",
-        arrivalTime: "17:45",
-        departureTime: "17:45",
-      },
-      {
-        place: "ADIVARAM",
-        arrivalTime: "18:15",
-        departureTime: "18:15",
-      },
-      {
-        place: "THAMARASSERY",
-        arrivalTime: "18:35",
-        departureTime: "18:35",
-      },
-      {
-        place: "KOZHIKKODE",
-        arrivalTime: "19:15",
-        departureTime: "19:30",
-      },
-      {
-        place: "UNIVERSITY KKD",
-        arrivalTime: "20:20",
-        departureTime: "20:20",
-      },
-      {
-        place: "KAKKAD",
-        arrivalTime: "20:30",
-        departureTime: "20:30",
-      },
-      {
-        place: "KOTTAKKAL",
-        arrivalTime: "21:00",
-        departureTime: "21:00",
-      },
-      {
-        place: "KUTTIPPURAM",
-        arrivalTime: "21:30",
-        departureTime: "21:30",
-      },
-      {
-        place: "EDAPAL JN",
-        arrivalTime: "21:45",
-        departureTime: "21:45",
-      },
-      {
-        place: "KUNNAMKULAM",
-        arrivalTime: "22:10",
-        departureTime: "22:10",
-      },
-      {
-        place: "THRISSUR",
-        arrivalTime: "22:40",
-        departureTime: "23:10",
-      },
-      {
-        place: "CHALAKKUDI",
-        arrivalTime: "23:45",
-        departureTime: "23:45",
-      },
-      {
-        place: "PERUMBAVOOR",
-        arrivalTime: "00:30",
-        departureTime: "00:30",
-      },
-      {
-        place: "MUVATTUPUZHA",
-        arrivalTime: "01:00",
-        departureTime: "01:15",
-      },
-      {
-        place: "KOOTHATTUKULAM",
-        arrivalTime: "01:40",
-        departureTime: "01:40",
-      },
-      {
-        place: "ETTUMANOOR",
-        arrivalTime: "02:15",
-        departureTime: "02:15",
-      },
-      {
-        place: "KOTTAYAM",
-        arrivalTime: "02:30",
-        departureTime: "02:30",
-      },
-      {
-        place: "CHANGANASSERY",
-        arrivalTime: "02:50",
-        departureTime: "02:50",
-      },
-      {
-        place: "THIRUVALLA",
-        arrivalTime: "03:05",
-        departureTime: "03:05",
-      },
-      {
-        place: "CHENGANNUR",
-        arrivalTime: "03:20",
-        departureTime: "03:20",
-      },
-      {
-        place: "PANDALAM",
-        arrivalTime: "03:40",
-        departureTime: "03:40",
-      },
-      {
-        place: "ADOOR",
-        arrivalTime: "04:05",
-        departureTime: "04:05",
-      },
-      {
-        place: "KOTTARAKKARA",
-        arrivalTime: "04:20",
-        departureTime: "05:00",
-      },
-      {
-        place: "VALAKOM",
-        arrivalTime: "05:30",
-        departureTime: "05:30",
-      },
-      {
-        place: "KILIMANOOR",
-        arrivalTime: "06:00",
-        departureTime: "06:00",
-      },
-      {
-        place: "TRIVANDRUM",
-        arrivalTime: "06:45",
-        departureTime: null,
-      },
-    ],
-  },
-];
-
-function toTransportTrip(
-  service: KsrtcService
+function rowToTrip(
+  row: KsrtcRow
 ): TransportTrip {
+  const originStop = {
+    id:
+      `ksrtc-${normalize(row.origin)
+        .replace(/\s+/g, "-")}`,
+    name: row.origin,
+    placeName: row.origin,
+  };
+
+  const destinationStop = {
+    id:
+      `ksrtc-${normalize(row.destination)
+        .replace(/\s+/g, "-")}`,
+    name: row.destination,
+    placeName: row.destination,
+  };
+
+  const stops: ScheduledStop[] = [
+    {
+      stop: originStop,
+      sequence: 0,
+      arrivalTime: null,
+      departureTime: row.departure,
+    },
+    {
+      stop: destinationStop,
+      sequence: 1,
+      arrivalTime: row.returnTime ?? null,
+      departureTime: null,
+    },
+  ];
+
   return {
-    id: service.id,
+    id: row.id,
     vehicleNumber: undefined,
-    serviceName: service.serviceName,
+    serviceName:
+      `${row.origin} → ${row.destination}`,
     operator: "KSRTC",
     mode: "bus",
     source: "ksrtc",
-    stops: createStops(service.route),
+    stops,
     isLive: false,
   };
 }
 
-export function getKsrtcTrips(
-  from: string,
-  to: string
-): TransportTrip[] {
-  return KSRTC_SERVICES
-    .filter((service) => {
-      const fromIndex = stopIndex(
-        service.route,
-        from
-      );
+async function fetchOfficialKsrtcPage(): Promise<string> {
+  const response = await fetch(
+    KSRTC_ROUTE_URL,
+    {
+      cache: "no-store",
+      headers: {
+        Accept:
+          "text/html,application/xhtml+xml",
+      },
+    }
+  );
 
-      const toIndex = stopIndex(
-        service.route,
-        to
-      );
+  if (!response.ok) {
+    throw new Error(
+      `KSRTC request failed: ${response.status}`
+    );
+  }
 
-      return (
-        fromIndex >= 0 &&
-        toIndex >= 0 &&
-        fromIndex < toIndex
-      );
-    })
-    .map(toTransportTrip);
+  return response.text();
 }
 
-/*
- * Useful for debugging / future database ingestion.
- */
-export function getAllKsrtcTrips(): TransportTrip[] {
-  return KSRTC_SERVICES.map(toTransportTrip);
+export async function fetchAllKsrtcTrips(): Promise<
+  TransportTrip[]
+> {
+  try {
+    const html =
+      await fetchOfficialKsrtcPage();
+
+    const rows =
+      extractRows(html);
+
+    return rows.map(rowToTrip);
+  } catch (error) {
+    console.error(
+      "KSRTC source error:",
+      error
+    );
+
+    return [];
+  }
+}
+
+export async function getKsrtcTrips(
+  from: string,
+  to: string
+): Promise<TransportTrip[]> {
+  const trips =
+    await fetchAllKsrtcTrips();
+
+  return trips.filter((trip) => {
+    const fromIndex =
+      trip.stops.findIndex((stop) =>
+        matchesStop(
+          stop.stop.name,
+          from
+        )
+      );
+
+    const toIndex =
+      trip.stops.findIndex((stop) =>
+        matchesStop(
+          stop.stop.name,
+          to
+        )
+      );
+
+    return (
+      fromIndex >= 0 &&
+      toIndex >= 0 &&
+      fromIndex < toIndex
+    );
+  });
 }
