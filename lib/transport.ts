@@ -10,7 +10,6 @@ import {
   getStopNameVariants,
   resolveStopName,
 } from "./stops";
-import { getKsrtcTrips } from "./sources/ksrtc";
 
 /* =========================================================
    SOURCE TYPES
