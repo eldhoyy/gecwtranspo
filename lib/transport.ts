@@ -1585,33 +1585,35 @@ async function fetchFromMyBusYatra(
 function dedupeTrips(
   trips: TransportTrip[]
 ): TransportTrip[] {
-  const seen =
-    new Set<string>();
+  const seen = new Set<string>();
+  const result: TransportTrip[] = [];
 
-  const result:
-    TransportTrip[] = [];
+  for (const trip of trips) {
+    const firstStop = trip.stops[0];
+    const lastStop = trip.stops[trip.stops.length - 1];
 
-  for (
-    const trip of trips
-  ) {
-    const key =
-      [
-        trip.operator ?? "",
-        trip.vehicleNumber ?? "",
-        trip.serviceName ?? "",
-        trip.departure ?? "",
-        trip.arrival ?? "",
-        trip.stops
-          .map(
-            (stop) =>
-              stop.stop.name
-          )
-          .join("|"),
-      ].join("::");
+    const departure =
+      firstStop?.departureTime ??
+      firstStop?.arrivalTime ??
+      "";
 
-    if (
-      seen.has(key)
-    ) {
+    const arrival =
+      lastStop?.arrivalTime ??
+      lastStop?.departureTime ??
+      "";
+
+    const key = [
+      trip.operator ?? "",
+      trip.vehicleNumber ?? "",
+      trip.serviceName ?? "",
+      departure,
+      arrival,
+      trip.stops
+        .map((stop) => stop.stop.name)
+        .join("|"),
+    ].join("::");
+
+    if (seen.has(key)) {
       continue;
     }
 
@@ -1621,7 +1623,6 @@ function dedupeTrips(
 
   return result;
 }
-
 /*
  * ----------------------------------------------------
  * MAIN TRANSPORT SEARCH
