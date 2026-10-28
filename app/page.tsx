@@ -886,11 +886,15 @@ export default function Home() {
                                 : "DIRECT"}
                             </span>
 
-                            <h4>
-                              {bus
-                                ? getBusType(bus)
-                                : "Bus"}
-                            </h4>
+                            <span
+  className={`operator-badge ${
+    bus && getBusType(bus) === "KSRTC"
+      ? "operator-badge-ksrtc"
+      : "operator-badge-private"
+  }`}
+>
+  {bus ? getBusType(bus) : "Bus"}
+</span>
 
                             <p>
                               {bus?.operator ||
