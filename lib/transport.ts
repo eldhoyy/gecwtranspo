@@ -1020,11 +1020,11 @@ function extractMyBusYatraRoute(
       return;
     }
 
-    route.push({
+        route.push({
       name: cleaned,
       time,
     });
-  });
+  }
 
   return route;
 }
