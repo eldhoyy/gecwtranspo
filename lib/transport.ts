@@ -1631,53 +1631,119 @@ export async function searchTransport(
   }
 
   /*
-   * Fetch all genuine sources.
+   * IMPORTANT:
+   * Do NOT call MyBusYatra here.
+   *
+   * The MyBusYatra page can contain many
+   * individual bus links. Loading those
+   * one-by-one makes the search extremely slow.
+   *
+   * The main search should use the structured
+   * schedule API and the Wayanad dataset.
    */
+
+  const withTimeout = async <T>(
+    promise: Promise<T>,
+    milliseconds: number,
+    fallback: T
+  ): Promise<T> => {
+    let timer: ReturnType<
+      typeof setTimeout
+    >;
+
+    const timeout =
+      new Promise<T>((resolve) => {
+        timer = setTimeout(() => {
+          resolve(fallback);
+        }, milliseconds);
+      });
+
+    try {
+      return await Promise.race([
+        promise,
+        timeout,
+      ]);
+    } finally {
+      clearTimeout(timer!);
+    }
+  };
+
+  /*
+   * Load both structured sources in parallel.
+   *
+   * 8 seconds is the maximum time we wait
+   * for each source.
+   *
+   * If one source is temporarily unavailable,
+   * the other source can still provide results.
+   */
+
   const [
     datasetTrips,
     apiTrips,
-    myBusTrips,
-  ] =
-    await Promise.all([
+  ] = await Promise.all([
+    withTimeout(
       fetchDataset(),
+      8000,
+      []
+    ),
 
+    withTimeout(
       fetchFromScheduleApi(
         fromName,
         toName
       ),
-
-      fetchFromMyBusYatra(
-        fromName,
-        toName
-      ),
-    ]);
+      8000,
+      []
+    ),
+  ]);
 
   /*
-   * Combine genuine trips only.
+   * Combine only genuine bus trips.
    */
   let trips =
     dedupeTrips([
       ...datasetTrips,
       ...apiTrips,
-      ...myBusTrips,
     ]);
 
   /*
-   * Complete routes when the official
-   * full-route API can provide them.
+   * IMPORTANT:
+   *
+   * Do not call enrichWithFullRoutes()
+   * for every search.
+   *
+   * The schedule API already provides the
+   * ordered stations for its returned trips.
+   *
+   * Calling the full-route endpoint here would
+   * create another series of network requests
+   * and make searches slow again.
    */
-  trips =
-    await enrichWithFullRoutes(
-      trips
-    );
-
-  trips =
-    dedupeTrips(trips);
 
   /*
-   * Final validation against the actual
-   * ordered route.
+   * Find the searched stops inside the
+   * REAL ordered route.
+   *
+   * This means:
+   *
+   * MANANTHAVADY
+   * NALAM MILE
+   * PANAMARAM
+   * KAMBALAKKAD
+   * KALPETTA
+   *
+   * can correctly produce:
+   *
+   * MANANTHAVADY -> NALAM MILE
+   * NALAM MILE -> PANAMARAM
+   * PANAMARAM -> KAMBALAKKAD
+   * KAMBALAKKAD -> KALPETTA
+   * MANANTHAVADY -> KALPETTA
+   *
+   * without creating fake trips.
    */
+
   const directTrips =
     findDirectTrips(
       trips,
@@ -1685,9 +1751,6 @@ export async function searchTransport(
       toName
     );
 
-  /*
-   * Convert genuine trips to journeys.
-   */
   const directJourneys =
     directTrips
       .map(
@@ -1706,7 +1769,7 @@ export async function searchTransport(
       );
 
   /*
-   * Earlier departures first.
+   * Sort by departure time.
    */
   directJourneys.sort(
     (a, b) => {
@@ -1751,9 +1814,8 @@ export async function searchTransport(
     directJourneys,
 
     /*
-     * Connecting journeys will be added
-     * later using the same genuine route
-     * data. No fake connections are created.
+     * Transfer search will be added
+     * after direct-route searching is stable.
      */
     connectingJourneys: [],
 
