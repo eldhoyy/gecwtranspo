@@ -1968,10 +1968,9 @@ export async function searchTransport(
    */
 
   const [
-    datasetTrips,
-    apiTrips,
-    ksrtcTrips,
-  ] = await Promise.all([
+  datasetTrips,
+  apiTrips,
+] = await Promise.all([
     withTimeout(
       fetchDataset(),
       10000,
