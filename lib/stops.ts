@@ -38,6 +38,25 @@ export const COMMON_STOPS: SearchStop[] = [
     ],
   },
   {
+  id: "nalam-mile",
+  name: "NALAM MILE",
+  aliases: [
+    "Nalam Mile",
+    "Nalam Mile Bus Stop",
+    "Nalam Mile Junction",
+  ],
+},
+{
+  id: "fourth-mile",
+  name: "4TH MILE",
+  aliases: [
+    "4th Mile",
+    "4 th Mile",
+    "4th Mile Junction",
+    "4 th Mile Junction",
+  ],
+},
+  {
     id: "sulthan-bathery",
     name: "SULTHAN BATHERY",
     aliases: [
