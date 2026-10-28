@@ -1970,22 +1970,47 @@ export async function searchTransport(
   const [
   datasetTrips,
   apiTrips,
+  ksrtcTrips,
 ] = await Promise.all([
-    withTimeout(
-      fetchDataset(),
-      10000,
-      []
-    ),
+  /*
+   * PRIVATE BUS:
+   * Complete Wayanad route dataset.
+   */
+  withTimeout(
+    fetchDataset(),
+    15000,
+    []
+  ),
 
-    withTimeout(
-      fetchFromScheduleApi(
-        fromName,
-        toName
-      ),
-      10000,
-      []
+  /*
+   * PRIVATE BUS:
+   * Live/public schedule API.
+   */
+  withTimeout(
+    fetchFromScheduleApi(
+      fromName,
+      toName
     ),
-  ]);
+    15000,
+    []
+  ),
+
+  /*
+   * KSRTC:
+   * Official KSRTC route database/scraper.
+   *
+   * This returns complete ordered routes
+   * and then finds FROM -> TO on those routes.
+   */
+  withTimeout(
+    getKsrtcTrips(
+      fromName,
+      toName
+    ),
+    45000,
+    []
+  ),
+]);
 
   /*
    * =======================================================
