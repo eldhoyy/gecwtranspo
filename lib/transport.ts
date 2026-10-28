@@ -657,10 +657,6 @@ function htmlToLines(
  * MYBUSYATRA TIMETABLE DETAIL LINKS
  * ----------------------------------------------------
  */
-
-function extractMyBusYatraDetailLinks(
-  html: string
-): string[] {
 function extractMyBusYatraDetailLinks(
   html: string
 ): string[] {
