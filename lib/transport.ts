@@ -2057,10 +2057,9 @@ export async function searchTransport(
    */
 
   const allTrips =
-    dedupeTrips([
-      ...privateTrips,
-      ...ksrtcTrips,
-    ]);
+  dedupeTrips([
+    ...privateTrips,
+  ]);
 
   /*
    * =======================================================
