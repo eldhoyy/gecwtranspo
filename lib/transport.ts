@@ -1896,38 +1896,27 @@ export async function searchTransport(
   from: string,
   to: string
 ): Promise<TransportSearchResult> {
-  const fromName =
-    resolveStopName(from);
-
-  const toName =
-    resolveStopName(to);
+  const fromName = resolveStopName(from);
+  const toName = resolveStopName(to);
 
   if (
     !fromName ||
     !toName ||
-    normalizeName(fromName) ===
-      normalizeName(toName)
+    normalizeName(fromName) === normalizeName(toName)
   ) {
     return {
       from: fromName,
       to: toName,
       directJourneys: [],
       connectingJourneys: [],
-      searchedAt:
-        new Date().toISOString(),
+      searchedAt: new Date().toISOString(),
     };
   }
 
   /*
-   * IMPORTANT:
-   * Do NOT call MyBusYatra here.
-   *
-   * The MyBusYatra page can contain many
-   * individual bus links. Loading those
-   * one-by-one makes the search extremely slow.
-   *
-   * The main search should use the structured
-   * schedule API and the Wayanad dataset.
+   * ---------------------------------------------------------
+   * TIMEOUT HELPER
+   * ---------------------------------------------------------
    */
 
   const withTimeout = async <T>(
@@ -1935,16 +1924,13 @@ export async function searchTransport(
     milliseconds: number,
     fallback: T
   ): Promise<T> => {
-    let timer: ReturnType<
-      typeof setTimeout
-    >;
+    let timer: ReturnType<typeof setTimeout> | undefined;
 
-    const timeout =
-      new Promise<T>((resolve) => {
-        timer = setTimeout(() => {
-          resolve(fallback);
-        }, milliseconds);
-      });
+    const timeout = new Promise<T>((resolve) => {
+      timer = setTimeout(() => {
+        resolve(fallback);
+      }, milliseconds);
+    });
 
     try {
       return await Promise.race([
@@ -1952,18 +1938,18 @@ export async function searchTransport(
         timeout,
       ]);
     } finally {
-      clearTimeout(timer!);
+      if (timer) {
+        clearTimeout(timer);
+      }
     }
   };
 
   /*
-   * Load both structured sources in parallel.
+   * ---------------------------------------------------------
+   * STEP 1
    *
-   * 8 seconds is the maximum time we wait
-   * for each source.
-   *
-   * If one source is temporarily unavailable,
-   * the other source can still provide results.
+   * Load the structured private-bus sources in parallel.
+   * ---------------------------------------------------------
    */
 
   const [
@@ -1972,7 +1958,7 @@ export async function searchTransport(
   ] = await Promise.all([
     withTimeout(
       fetchDataset(),
-      8000,
+      10000,
       []
     ),
 
@@ -1981,84 +1967,137 @@ export async function searchTransport(
         fromName,
         toName
       ),
-      8000,
+      10000,
       []
     ),
   ]);
 
   /*
-   * Combine only genuine bus trips.
-   */
-  let trips =
-    dedupeTrips([
-      ...datasetTrips,
-      ...apiTrips,
-    ]);
-
-  /*
-   * IMPORTANT:
+   * ---------------------------------------------------------
+   * STEP 2
    *
-   * Do not call enrichWithFullRoutes()
-   * for every search.
-   *
-   * The schedule API already provides the
-   * ordered stations for its returned trips.
-   *
-   * Calling the full-route endpoint here would
-   * create another series of network requests
-   * and make searches slow again.
+   * Combine the genuine trips.
+   * ---------------------------------------------------------
    */
 
+  let trips = dedupeTrips([
+    ...datasetTrips,
+    ...apiTrips,
+  ]);
+
   /*
-   * Find the searched stops inside the
-   * REAL ordered route.
+   * ---------------------------------------------------------
+   * STEP 3
    *
-   * This means:
+   * Enrich short API routes using the REAL vehicle's
+   * full route.
    *
-   * MANANTHAVADY
-   * NALAM MILE
-   * PANAMARAM
-   * KAMBALAKKAD
-   * KALPETTA
-   *
-   * can correctly produce:
+   * This is important for searches such as:
    *
    * MANANTHAVADY -> NALAM MILE
-   * NALAM MILE -> PANAMARAM
-   * PANAMARAM -> KAMBALAKKAD
-   * KAMBALAKKAD -> KALPETTA
-   * MANANTHAVADY -> KALPETTA
    *
-   * without creating fake trips.
+   * when the schedule API only returned a shortened
+   * portion of the vehicle's route.
+   *
+   * The enrichment function internally caches vehicles
+   * within this search and does not create fake routes.
+   * ---------------------------------------------------------
    */
 
-  const directTrips =
-    findDirectTrips(
-      trips,
-      fromName,
-      toName
-    );
-
-  const directJourneys =
-    directTrips
-      .map(
-        (trip) =>
-          tripToJourney(
-            trip,
-            fromName,
-            toName
-          )
-      )
-      .filter(
-        (
-          journey
-        ): journey is Journey =>
-          journey !== null
-      );
+  trips = await withTimeout(
+    enrichWithFullRoutes(trips),
+    10000,
+    trips
+  );
 
   /*
-   * Sort by departure time.
+   * ---------------------------------------------------------
+   * STEP 4
+   *
+   * Search MyBusYatra as an additional source.
+   *
+   * This source can contain KSRTC services as well as
+   * private services.
+   *
+   * It is intentionally kept separate from the structured
+   * sources so failure of this source does not destroy
+   * the results from the other sources.
+   * ---------------------------------------------------------
    */
+
+  const myBusTrips = await withTimeout(
+    fetchFromMyBusYatra(
+      fromName,
+      toName
+    ),
+    12000,
+    []
+  );
+
+  /*
+   * ---------------------------------------------------------
+   * STEP 5
+   *
+   * Combine everything and remove duplicates.
+   * ---------------------------------------------------------
+   */
+
+  trips = dedupeTrips([
+    ...trips,
+    ...myBusTrips,
+  ]);
+
+  /*
+   * ---------------------------------------------------------
+   * STEP 6
+   *
+   * Find the requested FROM and TO inside the REAL
+   * ordered route.
+   *
+   * No searched-pair route is ever created.
+   * ---------------------------------------------------------
+   */
+
+  const directTrips = findDirectTrips(
+    trips,
+    fromName,
+    toName
+  );
+
+  /*
+   * ---------------------------------------------------------
+   * STEP 7
+   *
+   * Convert matching trips into journeys.
+   * ---------------------------------------------------------
+   */
+
+  const directJourneys = directTrips
+    .map((trip) =>
+      tripToJourney(
+        trip,
+        fromName,
+        toName
+      )
+    )
+    .filter(
+      (
+        journey
+      ): journey is Journey =>
+        journey !== null
+    );
+
+  /*
+   * ---------------------------------------------------------
+   * STEP 8
+   *
+   * Sort by actual departure time.
+   *
+   * Journeys without a valid departure time are kept,
+   * but placed after journeys with valid times.
+   * ---------------------------------------------------------
+   */
+
   directJourneys.sort(
     (a, b) => {
       const aTime =
@@ -2078,15 +2117,11 @@ export async function searchTransport(
         return 0;
       }
 
-      if (
-        aTime === null
-      ) {
+      if (aTime === null) {
         return 1;
       }
 
-      if (
-        bTime === null
-      ) {
+      if (bTime === null) {
         return -1;
       }
 
@@ -2094,17 +2129,21 @@ export async function searchTransport(
     }
   );
 
+  /*
+   * ---------------------------------------------------------
+   * STEP 9
+   *
+   * Connecting journeys will be added after direct-route
+   * coverage is working correctly.
+   * ---------------------------------------------------------
+   */
+
   return {
     from: fromName,
-
     to: toName,
 
     directJourneys,
 
-    /*
-     * Transfer search will be added
-     * after direct-route searching is stable.
-     */
     connectingJourneys: [],
 
     searchedAt:
