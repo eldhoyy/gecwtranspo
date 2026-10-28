@@ -8,57 +8,86 @@ export const COMMON_STOPS: SearchStop[] = [
   {
     id: "thalapuzha",
     name: "THALAPUZHA",
-    aliases: ["GECW", "GECW / Thalapuzha", "Government Engineering College Wayanad"],
+    aliases: [
+      "Thalapuzha",
+      "Thalapuzha Junction",
+      "Thalapuzha Bus Stop",
+      "GECW",
+      "GEC Wayanad",
+      "GECW / Thalapuzha",
+      "Government Engineering College Wayanad",
+      "Government Engineering College, Wayanad",
+    ],
   },
   {
     id: "kambalakkad",
     name: "KAMBALAKKAD",
-    aliases: ["Kambalakkad"],
+    aliases: ["Kambalakkad", "Kambalakkadu"],
   },
   {
     id: "mananthavady",
     name: "MANANTHAVADY",
-    aliases: ["Mananthavady", "Mananthavady Bus Stand"],
+    aliases: [
+      "Mananthavady",
+      "Mananthavady Bus Stand",
+      "Mananthavady Bus Station",
+      "Mananthavady Town",
+      "Mananthavady Junction",
+      "Mananthavadi",
+      "Mananthavadi Bus Stand",
+    ],
   },
   {
     id: "sulthan-bathery",
     name: "SULTHAN BATHERY",
-    aliases: ["Sulthan Bathery", "Bathery", "Sultan Bathery"],
+    aliases: [
+      "Sulthan Bathery",
+      "Bathery",
+      "Sultan Bathery",
+      "Sulthanbathery",
+      "Sultanbathery",
+    ],
   },
   {
     id: "kalpetta",
     name: "KALPETTA",
-    aliases: ["Kalpetta"],
+    aliases: [
+      "Kalpetta",
+      "Kalpetta Bus Stand",
+      "Kalpetta Bus Station",
+      "Kalpetta Town",
+      "Kalpetta Junction",
+    ],
   },
   {
     id: "panamaram",
     name: "PANAMARAM",
-    aliases: ["Panamaram"],
+    aliases: ["Panamaram", "Panamaram Bus Stand"],
   },
   {
     id: "meppadi",
     name: "MEPPADI",
-    aliases: ["Meppadi"],
+    aliases: ["Meppadi", "Meppadi Bus Stand"],
   },
   {
     id: "pulpally",
     name: "PULPALLY",
-    aliases: ["Pulpally"],
+    aliases: ["Pulpally", "Pulpally Bus Stand"],
   },
   {
     id: "meenangadi",
     name: "MEENANGADI",
-    aliases: ["Meenangadi"],
+    aliases: ["Meenangadi", "Meenangadi Bus Stand"],
   },
   {
     id: "ambalavayal",
     name: "AMBALAVAYAL",
-    aliases: ["Ambalavayal"],
+    aliases: ["Ambalavayal", "Ambalavayal Bus Stand"],
   },
   {
     id: "vythiri",
     name: "VYTHIRI",
-    aliases: ["Vythiri"],
+    aliases: ["Vythiri", "Vythiri Bus Stand"],
   },
   {
     id: "thirunelly",
@@ -68,77 +97,106 @@ export const COMMON_STOPS: SearchStop[] = [
   {
     id: "thondernad",
     name: "THONDERNAD",
-    aliases: ["Thondernad"],
+    aliases: ["Thondernad", "Thondernadu"],
   },
   {
     id: "kannur",
     name: "KANNUR",
-    aliases: ["Kannur"],
+    aliases: [
+      "Kannur",
+      "Kannur Bus Stand",
+      "Kannur Central Bus Stand",
+      "Kannur KSRTC",
+    ],
   },
   {
     id: "thalassery",
     name: "THALASSERY",
-    aliases: ["Thalassery", "Tellicherry"],
+    aliases: [
+      "Thalassery",
+      "Tellicherry",
+      "Thalassery Bus Stand",
+    ],
   },
   {
     id: "kozhikode",
     name: "KOZHIKODE",
-    aliases: ["Kozhikode", "Calicut"],
+    aliases: [
+      "Kozhikode",
+      "Calicut",
+      "Kozhikode Bus Stand",
+      "Calicut Bus Stand",
+    ],
   },
   {
     id: "vadakara",
     name: "VADAKARA",
-    aliases: ["Vadakara", "Badagara"],
+    aliases: [
+      "Vadakara",
+      "Badagara",
+      "Vadakara Bus Stand",
+    ],
   },
   {
     id: "mukkam",
     name: "MUKKAM",
-    aliases: ["Mukkam"],
+    aliases: ["Mukkam", "Mukkam Bus Stand"],
   },
   {
     id: "perambra",
     name: "PERAMBRA",
-    aliases: ["Perambra"],
+    aliases: ["Perambra", "Perambra Bus Stand"],
   },
   {
     id: "kalikavu",
     name: "KALIKAVU",
-    aliases: ["Kalikavu"],
+    aliases: ["Kalikavu", "Kalikavu Bus Stand"],
   },
   {
     id: "nilambur",
     name: "NILAMBUR",
-    aliases: ["Nilambur"],
+    aliases: ["Nilambur", "Nilambur Bus Stand"],
   },
   {
     id: "manjeri",
     name: "MANJERI",
-    aliases: ["Manjeri"],
+    aliases: ["Manjeri", "Manjeri Bus Stand"],
   },
   {
     id: "malappuram",
     name: "MALAPPURAM",
-    aliases: ["Malappuram"],
+    aliases: ["Malappuram", "Malappuram Bus Stand"],
   },
   {
     id: "muvattupuzha",
     name: "MUVATTUPUZHA",
-    aliases: ["Muvattupuzha"],
+    aliases: [
+      "Muvattupuzha",
+      "Muvattupuzha Bus Stand",
+    ],
   },
   {
     id: "perumbavoor",
     name: "PERUMBAVOOR",
-    aliases: ["Perumbavoor"],
+    aliases: [
+      "Perumbavoor",
+      "Perumbavoor Bus Stand",
+    ],
   },
   {
     id: "aluva",
     name: "ALUVA",
-    aliases: ["Aluva"],
+    aliases: ["Aluva", "Aluva Bus Stand"],
   },
   {
     id: "ernakulam",
     name: "ERNAKULAM",
-    aliases: ["Ernakulam", "Kochi"],
+    aliases: [
+      "Ernakulam",
+      "Ernakulam South",
+      "Ernakulam Bus Stand",
+      "Kochi",
+    ],
   },
 ];
 
@@ -146,25 +204,38 @@ export function normalizeStopName(value: string): string {
   return value
     .trim()
     .toLowerCase()
+    .replace(/[.,/()\-\u2013\u2014]+/g, " ")
     .replace(/\s+/g, " ");
 }
 
-export function resolveStopName(value: string): string {
+function findStop(value: string): SearchStop | undefined {
   const normalized = normalizeStopName(value);
 
-  const match = COMMON_STOPS.find((stop) => {
-    if (normalizeStopName(stop.name) === normalized) {
-      return true;
-    }
+  return COMMON_STOPS.find((stop) =>
+    [stop.name, ...(stop.aliases ?? [])].some(
+      (candidate) =>
+        normalizeStopName(candidate) === normalized
+    )
+  );
+}
 
-    return (
-      stop.aliases?.some(
-        (alias) => normalizeStopName(alias) === normalized
-      ) ?? false
-    );
-  });
+export function resolveStopName(value: string): string {
+  return findStop(value)?.name ?? value.trim();
+}
 
-  return match?.name ?? value.trim();
+export function getStopNameVariants(value: string): string[] {
+  const stop = findStop(value);
+
+  if (!stop) {
+    return [value.trim()];
+  }
+
+  return Array.from(
+    new Set([
+      stop.name,
+      ...(stop.aliases ?? []),
+    ])
+  );
 }
 
 export function searchStops(
@@ -177,21 +248,19 @@ export function searchStops(
     return COMMON_STOPS.slice(0, limit);
   }
 
-  return COMMON_STOPS.filter((stop) => {
-    const name = normalizeStopName(stop.name);
+  return COMMON_STOPS
+    .filter((stop) =>
+      [stop.name, ...(stop.aliases ?? [])].some(
+        (candidate) => {
+          const name =
+            normalizeStopName(candidate);
 
-    if (name.startsWith(query)) {
-      return true;
-    }
-
-    if (name.includes(query)) {
-      return true;
-    }
-
-    return (
-      stop.aliases?.some((alias) =>
-        normalizeStopName(alias).includes(query)
-      ) ?? false
-    );
-  }).slice(0, limit);
+          return (
+            name.startsWith(query) ||
+            name.includes(query)
+          );
+        }
+      )
+    )
+    .slice(0, limit);
 }
