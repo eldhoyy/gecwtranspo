@@ -1903,35 +1903,36 @@ export async function searchTransport(
   if (
     !fromName ||
     !toName ||
-    normalizeName(fromName) === normalizeName(toName)
+    normalizeName(fromName) ===
+      normalizeName(toName)
   ) {
     return {
       from: fromName,
       to: toName,
       directJourneys: [],
       connectingJourneys: [],
-      searchedAt: new Date().toISOString(),
+      searchedAt:
+        new Date().toISOString(),
     };
   }
-
-  /*
-   * ---------------------------------------------------------
-   * TIMEOUT HELPER
-   * ---------------------------------------------------------
-   */
 
   const withTimeout = async <T>(
     promise: Promise<T>,
     milliseconds: number,
     fallback: T
   ): Promise<T> => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    let timer:
+      | ReturnType<typeof setTimeout>
+      | undefined;
 
-    const timeout = new Promise<T>((resolve) => {
-      timer = setTimeout(() => {
-        resolve(fallback);
-      }, milliseconds);
-    });
+    const timeout = new Promise<T>(
+      (resolve) => {
+        timer = setTimeout(
+          () => resolve(fallback),
+          milliseconds
+        );
+      }
+    );
 
     try {
       return await Promise.race([
@@ -1946,16 +1947,21 @@ export async function searchTransport(
   };
 
   /*
-   * ---------------------------------------------------------
-   * STEP 1
+   * =======================================================
+   * LOAD ALL PRIMARY SOURCES IN PARALLEL
    *
-   * Load the structured private-bus sources in parallel.
-   * ---------------------------------------------------------
+   * 1. Private-bus dataset
+   * 2. Private-bus API
+   * 3. KSRTC official source
+   *
+   * KSRTC is independent from the private-bus system.
+   * =======================================================
    */
 
   const [
     datasetTrips,
     apiTrips,
+    ksrtcTrips,
   ] = await Promise.all([
     withTimeout(
       fetchDataset(),
@@ -1971,132 +1977,147 @@ export async function searchTransport(
       10000,
       []
     ),
-  ]);
 
-  /*
-   * ---------------------------------------------------------
-   * STEP 2
-   *
-   * Combine the genuine trips.
-   * ---------------------------------------------------------
-   */
-
-  let trips = dedupeTrips([
-    ...datasetTrips,
-    ...apiTrips,
-  ]);
-
-  /*
-   * ---------------------------------------------------------
-   * STEP 3
-   *
-   * Enrich short API routes using the REAL vehicle's
-   * full route.
-   *
-   * This is important for searches such as:
-   *
-   * MANANTHAVADY -> NALAM MILE
-   *
-   * when the schedule API only returned a shortened
-   * portion of the vehicle's route.
-   *
-   * The enrichment function internally caches vehicles
-   * within this search and does not create fake routes.
-   * ---------------------------------------------------------
-   */
-
-  trips = await withTimeout(
-    enrichWithFullRoutes(trips),
-    10000,
-    trips
-  );
-
-  /*
-   * ---------------------------------------------------------
-   * STEP 4
-   *
-   * Search MyBusYatra as an additional source.
-   *
-   * This source can contain KSRTC services as well as
-   * private services.
-   *
-   * It is intentionally kept separate from the structured
-   * sources so failure of this source does not destroy
-   * the results from the other sources.
-   * ---------------------------------------------------------
-   */
-
-  const myBusTrips = await withTimeout(
-    fetchFromMyBusYatra(
-      fromName,
-      toName
-    ),
-    12000,
-    []
-  );
-
-  /*
-   * ---------------------------------------------------------
-   * STEP 5
-   *
-   * Combine everything and remove duplicates.
-   * ---------------------------------------------------------
-   */
-
-  trips = dedupeTrips([
-    ...trips,
-    ...myBusTrips,
-  ]);
-
-  /*
-   * ---------------------------------------------------------
-   * STEP 6
-   *
-   * Find the requested FROM and TO inside the REAL
-   * ordered route.
-   *
-   * No searched-pair route is ever created.
-   * ---------------------------------------------------------
-   */
-
-  const directTrips = findDirectTrips(
-    trips,
-    fromName,
-    toName
-  );
-
-  /*
-   * ---------------------------------------------------------
-   * STEP 7
-   *
-   * Convert matching trips into journeys.
-   * ---------------------------------------------------------
-   */
-
-  const directJourneys = directTrips
-    .map((trip) =>
-      tripToJourney(
-        trip,
+    withTimeout(
+      getKsrtcTrips(
         fromName,
         toName
-      )
-    )
-    .filter(
-      (
-        journey
-      ): journey is Journey =>
-        journey !== null
+      ),
+      10000,
+      []
+    ),
+  ]);
+
+  /*
+   * =======================================================
+   * PRIVATE BUS TRIPS
+   * =======================================================
+   */
+
+  let privateTrips =
+    dedupeTrips([
+      ...datasetTrips,
+      ...apiTrips,
+    ]);
+
+  /*
+   * Enrich short private-bus API results with their
+   * genuine complete vehicle route.
+   *
+   * No fake searched-pair routes are created.
+   */
+
+  privateTrips =
+    await withTimeout(
+      enrichWithFullRoutes(
+        privateTrips
+      ),
+      10000,
+      privateTrips
     );
 
   /*
-   * ---------------------------------------------------------
-   * STEP 8
+   * =======================================================
+   * MYBUSYATRA
+   * =======================================================
    *
-   * Sort by actual departure time.
+   * Keep it as a secondary source.
    *
-   * Journeys without a valid departure time are kept,
-   * but placed after journeys with valid times.
-   * ---------------------------------------------------------
+   * It may contain both KSRTC and private buses.
+   */
+
+  const myBusTrips =
+    await withTimeout(
+      fetchFromMyBusYatra(
+        fromName,
+        toName
+      ),
+      12000,
+      []
+    );
+
+  /*
+   * =======================================================
+   * COMBINE PRIVATE SOURCES
+   * =======================================================
+   */
+
+  privateTrips =
+    dedupeTrips([
+      ...privateTrips,
+      ...myBusTrips,
+    ]);
+
+  /*
+   * =======================================================
+   * COMBINE PRIVATE + KSRTC
+   * =======================================================
+   *
+   * KSRTC is kept as genuine KSRTC data because its
+   * source is "ksrtc".
+   */
+
+  const allTrips =
+    dedupeTrips([
+      ...privateTrips,
+      ...ksrtcTrips,
+    ]);
+
+  /*
+   * =======================================================
+   * FIND DIRECT JOURNEYS
+   * =======================================================
+   *
+   * The matcher checks the actual ordered route:
+   *
+   * A -> B -> C -> D
+   *
+   * Search:
+   * B -> D
+   *
+   * Result:
+   * same genuine bus.
+   *
+   * We never create:
+   * B -> D
+   *
+   * as a fake route.
+   * =======================================================
+   */
+
+  const directTrips =
+    findDirectTrips(
+      allTrips,
+      fromName,
+      toName
+    );
+
+  /*
+   * =======================================================
+   * CONVERT TO JOURNEYS
+   * =======================================================
+   */
+
+  const directJourneys =
+    directTrips
+      .map((trip) =>
+        tripToJourney(
+          trip,
+          fromName,
+          toName
+        )
+      )
+      .filter(
+        (
+          journey
+        ): journey is Journey =>
+          journey !== null
+      );
+
+  /*
+   * =======================================================
+   * SORT BY DEPARTURE TIME
+   * =======================================================
    */
 
   directJourneys.sort(
@@ -2131,12 +2152,9 @@ export async function searchTransport(
   );
 
   /*
-   * ---------------------------------------------------------
-   * STEP 9
-   *
-   * Connecting journeys will be added after direct-route
-   * coverage is working correctly.
-   * ---------------------------------------------------------
+   * =======================================================
+   * RETURN
+   * =======================================================
    */
 
   return {
@@ -2145,13 +2163,17 @@ export async function searchTransport(
 
     directJourneys,
 
+    /*
+     * Transfer routing will be implemented after
+     * direct-route coverage is stable.
+     */
+
     connectingJourneys: [],
 
     searchedAt:
       new Date().toISOString(),
   };
 }
-
 /* =========================================================
    COMPATIBILITY EXPORT
    ========================================================= */
