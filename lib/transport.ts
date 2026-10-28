@@ -1979,13 +1979,13 @@ export async function searchTransport(
     ),
 
     withTimeout(
-      getKsrtcTrips(
-        fromName,
-        toName
-      ),
-      10000,
-      []
-    ),
+  getKsrtcTrips(
+    fromName,
+    toName
+  ),
+  30000,
+  []
+),
   ]);
 
   /*
