@@ -6,7 +6,6 @@ import type {
 } from "@/lib/types";
 
 import { createSearchResult } from "./normalize";
-
 import {
   getStopNameVariants,
   resolveStopName,
@@ -62,13 +61,10 @@ const MYBUSYATRA_BASE_URL =
   "https://www.mybusyatra.in";
 
 /*
- * MyBusYatra uses slightly different
- * spellings in its URLs.
+ * MyBusYatra uses different spellings for
+ * some places in its URLs.
  */
-const MYBUS_SLUG_OVERRIDES: Record<
-  string,
-  string
-> = {
+const MYBUS_SLUG_OVERRIDES: Record<string, string> = {
   THALAPUZHA: "thalappuzha",
   MANANTHAVADY: "mananthavady",
   NALAM_MILE: "nalam-mile",
@@ -101,27 +97,20 @@ const MYBUS_SLUG_OVERRIDES: Record<
 };
 
 /*
- * ----------------------------------------------------
+ * ---------------------------------------------------------
  * BASIC HELPERS
- * ----------------------------------------------------
+ * ---------------------------------------------------------
  */
 
-function normalizeName(
-  value: string
-): string {
+function normalizeName(value: string): string {
   return value
     .trim()
     .toLowerCase()
-    .replace(
-      /[.,/()\-\u2013\u2014]+/g,
-      " "
-    )
+    .replace(/[.,/()\-–—]+/g, " ")
     .replace(/\s+/g, " ");
 }
 
-function makeStopId(
-  name: string
-): string {
+function makeStopId(name: string): string {
   return `bus-${normalizeName(name)
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "")}`;
@@ -131,124 +120,141 @@ function stationMatches(
   stationName: string,
   requestedName: string
 ): boolean {
-  const station =
-    normalizeName(stationName);
+  const station = normalizeName(stationName);
 
-  const variants =
-    getStopNameVariants(
-      requestedName
+  const variants = getStopNameVariants(requestedName);
+
+  return variants.some((variant) => {
+    const requested = normalizeName(variant);
+
+    return (
+      station === requested ||
+      station.includes(requested) ||
+      requested.includes(station)
     );
+  });
+}
 
-  return variants.some(
-    (variant) => {
-      const requested =
-        normalizeName(
-          variant
-        );
+function timeToMinutes(
+  value?: string | null
+): number | null {
+  if (!value) return null;
 
-      return (
-        station === requested ||
-        station.includes(requested) ||
-        requested.includes(station)
-      );
-    }
+  const text = value
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+
+  const twentyFourHour = text.match(
+    /^(\d{1,2}):(\d{2})$/
   );
+
+  if (twentyFourHour) {
+    const hour = Number(twentyFourHour[1]);
+    const minute = Number(twentyFourHour[2]);
+
+    if (
+      hour >= 0 &&
+      hour <= 23 &&
+      minute >= 0 &&
+      minute <= 59
+    ) {
+      return hour * 60 + minute;
+    }
+  }
+
+  const twelveHour = text.match(
+    /^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/
+  );
+
+  if (twelveHour) {
+    let hour = Number(twelveHour[1]);
+    const minute = Number(twelveHour[2] ?? "0");
+    const period = twelveHour[3];
+
+    if (
+      hour >= 1 &&
+      hour <= 12 &&
+      minute >= 0 &&
+      minute <= 59
+    ) {
+      if (period === "am") {
+        if (hour === 12) hour = 0;
+      } else if (hour !== 12) {
+        hour += 12;
+      }
+
+      return hour * 60 + minute;
+    }
+  }
+
+  return null;
 }
 
 /*
- * ----------------------------------------------------
+ * ---------------------------------------------------------
  * ORDERED STATION CONVERSION
- * ----------------------------------------------------
+ * ---------------------------------------------------------
  */
 
 function convertStations(
-  stations:
-    | ApiStation[]
-    | undefined
+  stations: ApiStation[] | undefined
 ): ScheduledStop[] {
-  if (
-    !Array.isArray(stations)
-  ) {
+  if (!Array.isArray(stations)) {
     return [];
   }
 
   return stations
-    .map(
-      (
-        station,
-        sequence
-      ) => {
-        const name =
-          station.station?.trim();
+    .map((station, sequence) => {
+      const name = station.station?.trim();
 
-        if (!name) {
-          return null;
-        }
+      if (!name) return null;
 
-        const stop:
-          TransportStop = {
-          id:
-            makeStopId(name),
-          name,
-        };
+      const stop: TransportStop = {
+        id: makeStopId(name),
+        name,
+      };
 
-        return {
-          stop,
-          sequence,
-          arrivalTime:
-            station.arrivalTime ??
-            null,
-          departureTime:
-            station.departureTime ??
-            null,
-        };
-      }
-    )
+      return {
+        stop,
+        sequence,
+        arrivalTime: station.arrivalTime ?? null,
+        departureTime: station.departureTime ?? null,
+      };
+    })
     .filter(
-      (
-        stop
-      ): stop is ScheduledStop =>
+      (stop): stop is ScheduledStop =>
         stop !== null
     );
 }
 
 /*
- * ----------------------------------------------------
- * PRIVATE BUS API CONVERSION
- * ----------------------------------------------------
+ * ---------------------------------------------------------
+ * PRIVATE BUS API
+ * ---------------------------------------------------------
  */
 
 function convertApiTrip(
   trip: ApiTrip,
   index: number
 ): TransportTrip | null {
-  const stops =
-    convertStations(
-      trip.stations
-    );
+  const stops = convertStations(trip.stations);
 
-  if (
-    stops.length < 2
-  ) {
+  if (stops.length < 2) {
     return null;
   }
 
   const vehicleNumber =
-    trip.vehicle_number ??
-    trip["Vehicle Number"] ??
+    trip.vehicle_number?.trim() ||
+    trip["Vehicle Number"]?.trim() ||
     undefined;
 
-  const tripNumber =
-    trip.trip ?? index;
+  const tripNumber = trip.trip ?? index;
 
   return {
-    id:
-      `private-${vehicleNumber || "bus"}-${tripNumber}`
-        .toLowerCase()
-        .replace(
-          /[^a-z0-9]+/g,
-          "-"
-        ),
+    id: `private-${vehicleNumber || "bus"}-${tripNumber}`
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-"),
 
     vehicleNumber,
 
@@ -257,118 +263,83 @@ function convertApiTrip(
         ? `Trip ${trip.trip}`
         : undefined,
 
-    operator:
-      "Private Bus",
+    operator: "Private Bus",
 
-    mode:
-      "bus",
+    mode: "bus",
 
-    source:
-      "private-bus-api",
+    source: "private-bus-api",
 
     stops,
 
-    isLive:
-      false,
+    isLive: false,
   };
 }
 
 /*
- * ----------------------------------------------------
- * WAYANAD DATASET CONVERSION
- * ----------------------------------------------------
+ * ---------------------------------------------------------
+ * WAYANAD DATASET
+ * ---------------------------------------------------------
  */
 
 function convertDataset(
   data: Dataset
 ): TransportTrip[] {
-  const buses =
-    Array.isArray(
-      data.busSchedules
-    )
-      ? data.busSchedules
+  const buses = Array.isArray(data.busSchedules)
+    ? data.busSchedules
+    : [];
+
+  const trips: TransportTrip[] = [];
+
+  buses.forEach((bus, busIndex) => {
+    const schedules = Array.isArray(bus.schedule)
+      ? bus.schedule
       : [];
 
-  const trips:
-    TransportTrip[] = [];
-
-  buses.forEach(
-    (
-      bus,
-      busIndex
-    ) => {
-      const schedules =
-        Array.isArray(
-          bus.schedule
-        )
-          ? bus.schedule
-          : [];
-
-      schedules.forEach(
-        (
-          schedule,
-          scheduleIndex
-        ) => {
-          const trip =
-            convertApiTrip(
-              {
-                vehicle_number:
-                  bus.vehicle_number,
-
-                "Vehicle Number":
-                  bus["Vehicle Number"],
-
-                trip:
-                  schedule.trip,
-
-                stations:
-                  schedule.stations,
-              },
-
-              busIndex * 1000 +
-                scheduleIndex
-            );
-
-          if (trip) {
-            trips.push(trip);
-          }
-        }
+    schedules.forEach((schedule, scheduleIndex) => {
+      const trip = convertApiTrip(
+        {
+          vehicle_number: bus.vehicle_number,
+          "Vehicle Number": bus["Vehicle Number"],
+          trip: schedule.trip,
+          stations: schedule.stations,
+        },
+        busIndex * 1000 + scheduleIndex
       );
-    }
-  );
+
+      if (trip) {
+        trips.push(trip);
+      }
+    });
+  });
 
   return trips;
 }
 
 /*
- * ----------------------------------------------------
- * FIND DIRECT TRIPS
+ * ---------------------------------------------------------
+ * DIRECT ROUTE MATCHING
  *
  * IMPORTANT:
  *
- * A trip contains its COMPLETE
- * ordered route.
+ * We use the COMPLETE ordered route.
  *
  * Example:
  *
  * MANANTHAVADY
+ * NALAM MILE
  * PANAMARAM
+ * KAMBALAKKAD
  * KALPETTA
- * ADIVAARAM
- * THAMARASSERY
- * MUKKAM
- * AREEKODE
- * NILAMBUR
  *
  * Searching:
  *
- * PANAMARAM -> KALPETTA
+ * MANANTHAVADY -> NALAM MILE
  *
- * returns the same bus.
+ * returns the same complete bus.
  *
- * We never create a fake
- * PANAMARAM -> KALPETTA trip.
- * ----------------------------------------------------
+ * We DO NOT create a fake bus whose route
+ * starts at MANANTHAVADY and ends at NALAM MILE.
+ * ---------------------------------------------------------
  */
 
 function findDirectTrips(
@@ -376,39 +347,27 @@ function findDirectTrips(
   from: string,
   to: string
 ): TransportTrip[] {
-  return trips.filter(
-    (trip) => {
-      const fromIndex =
-        trip.stops.findIndex(
-          (stop) =>
-            stationMatches(
-              stop.stop.name,
-              from
-            )
-        );
+  return trips.filter((trip) => {
+    const fromIndex = trip.stops.findIndex((stop) =>
+      stationMatches(stop.stop.name, from)
+    );
 
-      const toIndex =
-        trip.stops.findIndex(
-          (stop) =>
-            stationMatches(
-              stop.stop.name,
-              to
-            )
-        );
+    const toIndex = trip.stops.findIndex((stop) =>
+      stationMatches(stop.stop.name, to)
+    );
 
-      return (
-        fromIndex !== -1 &&
-        toIndex !== -1 &&
-        fromIndex < toIndex
-      );
-    }
-  );
+    return (
+      fromIndex !== -1 &&
+      toIndex !== -1 &&
+      fromIndex < toIndex
+    );
+  });
 }
 
 /*
- * ----------------------------------------------------
+ * ---------------------------------------------------------
  * PRIVATE BUS SCHEDULE API
- * ----------------------------------------------------
+ * ---------------------------------------------------------
  */
 
 async function fetchFromScheduleApi(
@@ -418,120 +377,101 @@ async function fetchFromScheduleApi(
   const url =
     `${SCHEDULE_API_URL}?departure=${encodeURIComponent(
       from
-    )}&destination=${encodeURIComponent(
-      to
-    )}`;
+    )}&destination=${encodeURIComponent(to)}`;
 
   try {
-    const response =
-      await fetch(
-        url,
-        {
-          headers: {
-            Accept:
-              "application/json",
-          },
-          cache:
-            "no-store",
-        }
-      );
+    const response = await fetch(url, {
+      headers: {
+        Accept: "application/json",
+      },
+      cache: "no-store",
+    });
 
     if (!response.ok) {
       return [];
     }
 
-    const data: unknown =
-      await response.json();
+    const data: unknown = await response.json();
 
-    if (
-      !Array.isArray(data)
-    ) {
+    if (!Array.isArray(data)) {
       return [];
     }
 
     return data
-      .map(
-        (
-          item,
+      .map((item, index) =>
+        convertApiTrip(
+          item as ApiTrip,
           index
-        ) =>
-          convertApiTrip(
-            item as ApiTrip,
-            index
-          )
+        )
       )
       .filter(
-        (
-          trip
-        ): trip is TransportTrip =>
+        (trip): trip is TransportTrip =>
           trip !== null
       );
-  } catch {
+  } catch (error) {
+    console.warn(
+      "Private bus API failed:",
+      error
+    );
+
     return [];
   }
 }
 
 /*
- * ----------------------------------------------------
- * PRIVATE WAYANAD DATASET
- * ----------------------------------------------------
+ * ---------------------------------------------------------
+ * WAYANAD DATASET FETCH
+ * ---------------------------------------------------------
  */
 
 async function fetchFromDataset(): Promise<
   TransportTrip[]
 > {
   try {
-    const response =
-      await fetch(
-        DATASET_URL,
-        {
-          headers: {
-            Accept:
-              "application/json",
-          },
-
-          next: {
-            revalidate:
-              3600,
-          },
-        }
-      );
+    const response = await fetch(
+      DATASET_URL,
+      {
+        headers: {
+          Accept: "application/json",
+        },
+        next: {
+          revalidate: 3600,
+        },
+      }
+    );
 
     if (!response.ok) {
       return [];
     }
 
-    const data:
-      Dataset =
+    const data: Dataset =
       await response.json();
 
-    return convertDataset(
-      data
+    return convertDataset(data);
+  } catch (error) {
+    console.warn(
+      "Wayanad dataset failed:",
+      error
     );
-  } catch {
+
     return [];
   }
 }
 
 /*
- * ----------------------------------------------------
- * MYBUSYATRA HELPERS
- * ----------------------------------------------------
+ * ---------------------------------------------------------
+ * MYBUSYATRA
+ * ---------------------------------------------------------
  */
 
 function myBusYatraSlug(
   value: string
 ): string {
-  const resolved =
-    resolveStopName(value);
-
-  const normalized =
-    resolved.toUpperCase();
+  const resolved = resolveStopName(value);
+  const normalized = resolved.toUpperCase();
 
   const override =
-    MYBUS_SLUG_OVERRIDES[
-      normalized
-    ];
+    MYBUS_SLUG_OVERRIDES[normalized];
 
   if (override) {
     return override;
@@ -539,56 +479,42 @@ function myBusYatraSlug(
 
   return normalized
     .toLowerCase()
-    .replace(
-      /[^a-z0-9]+/g,
-      "-"
-    )
-    .replace(
-      /^-|-$/g,
-      ""
-    );
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function myBusYatraTimetableUrl(
+  from: string,
+  to: string
+): string {
+  return (
+    `${MYBUSYATRA_BASE_URL}/bus-timing-from-` +
+    `${myBusYatraSlug(from)}-to-` +
+    `${myBusYatraSlug(to)}`
+  );
 }
 
 /*
  * Decode common HTML entities.
  */
+
 function decodeHtml(
   value: string
 ): string {
   return value
-    .replace(
-      /&nbsp;/gi,
-      " "
-    )
-    .replace(
-      /&amp;/gi,
-      "&"
-    )
-    .replace(
-      /&quot;/gi,
-      '"'
-    )
-    .replace(
-      /&#39;/gi,
-      "'"
-    )
-    .replace(
-      /&apos;/gi,
-      "'"
-    )
-    .replace(
-      /&gt;/gi,
-      ">"
-    )
-    .replace(
-      /&lt;/gi,
-      "<"
-    );
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&apos;/gi, "'")
+    .replace(/&gt;/gi, ">")
+    .replace(/&lt;/gi, "<");
 }
 
 /*
- * Convert HTML to readable text.
+ * Convert HTML to text.
  */
+
 function htmlToText(
   html: string
 ): string {
@@ -607,7 +533,7 @@ function htmlToText(
         "\n"
       )
       .replace(
-        /<\/(div|p|li|article|section|header|footer|h1|h2|h3|h4|h5|h6|br|main|nav|tr)>/gi,
+        /<\/(div|p|li|article|section|header|footer|h1|h2|h3|h4|h5|h6|br|main|nav|tr|td)>/gi,
         "\n"
       )
       .replace(
@@ -615,61 +541,36 @@ function htmlToText(
         " "
       )
   )
-    .replace(
-      /\r/g,
-      ""
-    )
-    .replace(
-      /[ \t]+/g,
-      " "
-    )
-    .replace(
-      /\n\s*\n+/g,
-      "\n"
-    )
+    .replace(/\r/g, "")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n\s*\n+/g, "\n")
     .trim();
 }
 
-/*
- * Convert HTML to individual readable lines.
- */
 function htmlToLines(
   html: string
 ): string[] {
-  return htmlToText(
-    html
-  )
+  return htmlToText(html)
     .split("\n")
-    .map(
-      (line) =>
-        line
-          .replace(
-            /\s+/g,
-            " "
-          )
-          .trim()
+    .map((line) =>
+      line
+        .replace(/\s+/g, " ")
+        .trim()
     )
     .filter(Boolean);
 }
 
 /*
- * ----------------------------------------------------
- * MYBUSYATRA TIMETABLE DETAIL LINKS
- * ----------------------------------------------------
+ * ---------------------------------------------------------
+ * MYBUSYATRA SERVICE LINKS
+ * ---------------------------------------------------------
  */
+
 function extractMyBusYatraDetailLinks(
   html: string
 ): string[] {
-  const links: string[] = [];
+  const links = new Set<string>();
 
-  /*
-   * MyBusYatra can expose service links
-   * in slightly different formats.
-   *
-   * Do not restrict this to /bus/ksrtc.
-   * The timetable may contain service URLs
-   * with different slugs.
-   */
   const regex =
     /href\s*=\s*["']([^"']+)["']/gi;
 
@@ -678,9 +579,7 @@ function extractMyBusYatraDetailLinks(
   while ((match = regex.exec(html))) {
     const href = decodeHtml(match[1]);
 
-    if (!href) {
-      continue;
-    }
+    if (!href) continue;
 
     try {
       const url = new URL(
@@ -692,181 +591,53 @@ function extractMyBusYatraDetailLinks(
         MYBUSYATRA_BASE_URL
       );
 
-      if (url.hostname !== base.hostname) {
+      if (
+        url.hostname !==
+        base.hostname
+      ) {
         continue;
       }
 
-      const pathname =
+      const path =
         url.pathname.toLowerCase();
 
-      if (!pathname.startsWith("/bus/")) {
+      if (
+        !path.startsWith("/bus/")
+      ) {
         continue;
       }
 
       /*
-       * Ignore the timetable/listing page itself.
-       *
-       * Example:
-       * /bus/mananthavady-to-nalam-mile
+       * Keep the URL, but remove fragments.
        */
-      const slug =
-        pathname
-          .replace(/^\/bus\//, "")
-          .replace(/\/+$/, "");
+      url.hash = "";
 
-      if (!slug) {
-        continue;
-      }
-
-      /*
-       * A service-detail URL normally contains
-       * more information than the simple
-       * "from-to" timetable URL.
-       *
-       * Keep every /bus/ link here and let
-       * fetchMyBusYatraService() validate it.
-       */
-      links.push(url.toString());
+      links.add(url.toString());
     } catch {
-      continue;
+      // Ignore malformed links.
     }
   }
 
-  return Array.from(
-    new Set(links)
-  );
+  return Array.from(links);
 }
 
 /*
- * ----------------------------------------------------
- * TIME HELPERS
- * ----------------------------------------------------
- */
-
-function isTime(
-  value: string
-): boolean {
-  return /^\d{1,2}:\d{2}$/.test(
-    value.trim()
-  );
-}
-
-function normalizeTime(
-  value: string
-): string {
-  const match =
-    value
-      .trim()
-      .match(
-        /^(\d{1,2}):(\d{2})$/
-      );
-
-  if (!match) {
-    return value.trim();
-  }
-
-  const hour =
-    Number(match[1]);
-
-  const minute =
-    Number(match[2]);
-
-  if (
-    hour < 0 ||
-    hour > 23 ||
-    minute < 0 ||
-    minute > 59
-  ) {
-    return value.trim();
-  }
-
-  return `${String(hour).padStart(
-    2,
-    "0"
-  )}:${String(minute).padStart(
-    2,
-    "0"
-  )}`;
-}
-
-/*
- * Clean station names extracted
- * from the MyBusYatra page.
- */
-function cleanRouteStation(
-  value: string
-): string | null {
-  let station =
-    value
-      .replace(
-        /[|•]+/g,
-        " "
-      )
-      .replace(
-        /\s+/g,
-        " "
-      )
-      .trim();
-
-  station =
-    station.replace(
-      /^\d+\s*[.)-]\s*/,
-      ""
-    );
-
-  station =
-    station.replace(
-      /\s*(arrival|departure)\s*$/i,
-      ""
-    );
-
-  if (
-    !station ||
-    station.length > 80
-  ) {
-    return null;
-  }
-
-  const lower =
-    station.toLowerCase();
-
-  if (
-    [
-      "route schedule",
-      "schedule",
-      "timings",
-      "time",
-      "arrival",
-      "departure",
-      "bus timing",
-      "route",
-    ].includes(lower)
-  ) {
-    return null;
-  }
-
-  if (
-    /^(mon|tue|wed|thu|fri|sat|sun)/i.test(
-      station
-    )
-  ) {
-    return null;
-  }
-
-  return station;
-}
-
-/*
- * ----------------------------------------------------
- * ROUTE PARSER
- * ----------------------------------------------------
+ * ---------------------------------------------------------
+ * MYBUSYATRA ROUTE PARSER
  *
- * MyBusYatra service pages show a
- * complete ordered route.
+ * Supports common forms such as:
  *
- * We try several formats because
- * the website markup can vary.
- * ----------------------------------------------------
+ * MANANTHAVADY 14:35
+ * PANAMARAM 15:15
+ *
+ * and:
+ *
+ * 14:35 MANANTHAVADY
+ * 15:15 PANAMARAM
+ *
+ * and HTML where station/time are
+ * next to each other.
+ * ---------------------------------------------------------
  */
 
 function extractMyBusYatraRoute(
@@ -876,290 +647,281 @@ function extractMyBusYatraRoute(
 
   const route: MyBusYatraRouteStop[] = [];
 
-  function addRouteStop(
+  const timeRegex =
+    /\b(\d{1,2}:\d{2})(?:\s*(am|pm))?\b/i;
+
+  const ignored = new Set([
+    "bus timetable",
+    "bus timing",
+    "departure",
+    "arrival",
+    "duration",
+    "next bus",
+    "first departure",
+    "last bus",
+    "frequency",
+  ]);
+
+  function cleanStation(
+    value: string
+  ): string {
+    return value
+      .replace(
+        /\b\d{1,2}:\d{2}(?:\s*(?:am|pm))?\b/gi,
+        " "
+      )
+      .replace(
+        /[|•·]+/g,
+        " "
+      )
+      .replace(
+        /\s+/g,
+        " "
+      )
+      .trim();
+  }
+
+  function addStop(
     name: string,
-    time: string
+    time?: string
   ) {
-    const station =
-      cleanRouteStation(name);
-
-    if (!station) {
-      return;
-    }
-
-    const normalizedTime =
-      normalizeTime(time);
-
-    if (!isTime(normalizedTime)) {
-      return;
-    }
-
-    const previous =
-      route[route.length - 1];
+    const cleaned =
+      cleanStation(name);
 
     if (
-      previous &&
-      normalizeName(previous.name) ===
-        normalizeName(station)
+      !cleaned ||
+      cleaned.length < 2
     ) {
       return;
     }
 
+    const lower =
+      cleaned.toLowerCase();
+
+    if (ignored.has(lower)) {
+      return;
+    }
+
+    /*
+     * Ignore obvious non-stop labels.
+     */
+    if (
+      /^(to|from|via|continues|bus|service|route)$/i.test(
+        cleaned
+      )
+    ) {
+      return;
+    }
+
+    /*
+     * Avoid adding the same stop repeatedly
+     * when HTML contains duplicate visual elements.
+     */
+    const existingIndex =
+      route.findIndex(
+        (item) =>
+          normalizeName(
+            item.name
+          ) === normalizeName(cleaned)
+      );
+
+    if (
+      existingIndex !== -1
+    ) {
+      if (time) {
+        route[existingIndex].arrival ??=
+          time;
+        route[existingIndex].departure ??=
+          time;
+      }
+
+      return;
+    }
+
     route.push({
-      name: station,
-      arrival: normalizedTime,
-      departure: normalizedTime,
+      name: cleaned,
+      arrival: time,
+      departure: time,
     });
   }
 
   /*
-   * --------------------------------------------------
-   * FORMAT 1
+   * Format:
    *
    * MANANTHAVADY 14:35
-   * PANAMARAM 15:15
-   * --------------------------------------------------
    */
   for (const line of lines) {
     const match =
-      line.match(
-        /^(.+?)\s+(\d{1,2}:\d{2})$/
-      );
+      line.match(timeRegex);
 
     if (!match) {
       continue;
     }
 
-    addRouteStop(
-      match[1],
-      match[2]
-    );
-  }
+    const time = match[0].trim();
 
-  /*
-   * --------------------------------------------------
-   * FORMAT 2
-   *
-   * 14:35 MANANTHAVADY
-   * 15:15 PANAMARAM
-   * --------------------------------------------------
-   */
-  if (route.length < 2) {
-    route.length = 0;
+    const before =
+      line.slice(
+        0,
+        match.index
+      ).trim();
 
-    for (const line of lines) {
-      const match =
-        line.match(
-          /^(\d{1,2}:\d{2})\s+(.+?)$/
-        );
+    const after =
+      line
+        .slice(
+          (match.index ?? 0) +
+            match[0].length
+        )
+        .trim();
 
-      if (!match) {
-        continue;
-      }
-
-      addRouteStop(
-        match[2],
-        match[1]
-      );
-    }
-  }
-
-  /*
-   * --------------------------------------------------
-   * FORMAT 3
-   *
-   * Station and time on neighbouring lines.
-   *
-   * MANANTHAVADY
-   * 14:35
-   * PANAMARAM
-   * 15:15
-   * --------------------------------------------------
-   */
-  if (route.length < 2) {
-    route.length = 0;
-
-    for (
-      let i = 0;
-      i < lines.length - 1;
-      i++
-    ) {
-      const station =
-        cleanRouteStation(lines[i]);
-
-      if (!station) {
-        continue;
-      }
-
-      if (!isTime(lines[i + 1])) {
-        continue;
-      }
-
-      addRouteStop(
-        station,
-        lines[i + 1]
-      );
-    }
-  }
-
-  /*
-   * --------------------------------------------------
-   * FORMAT 4
-   *
-   * Time and station on neighbouring lines.
-   *
-   * 14:35
-   * MANANTHAVADY
-   * --------------------------------------------------
-   */
-  if (route.length < 2) {
-    route.length = 0;
-
-    for (
-      let i = 0;
-      i < lines.length - 1;
-      i++
-    ) {
-      if (!isTime(lines[i])) {
-        continue;
-      }
-
-      const station =
-        cleanRouteStation(lines[i + 1]);
-
-      if (!station) {
-        continue;
-      }
-
-      addRouteStop(
-        station,
-        lines[i]
-      );
-    }
-  }
-
-  /*
-   * --------------------------------------------------
-   * FORMAT 5
-   *
-   * Use known GECW Go stops as anchors.
-   *
-   * Example:
-   *
-   * MANANTHAVADY 14:35
-   * PANAMARAM 15:15
-   * KALPETTA 15:55
-   * --------------------------------------------------
-   */
-  if (route.length < 2) {
-    route.length = 0;
-
-    const knownStops = [
-      "MANANTHAVADY",
-      "NALAM MILE",
-      "4TH MILE",
-      "PANAMARAM",
-      "KAMBALAKKAD",
-      "KALPETTA",
-      "MEENANGADI",
-      "SULTHAN BATHERY",
-      "PULPALLY",
-      "VYTHIRI",
-      "THAMARASSERY",
-      "MUKKAM",
-      "NILAMBUR",
-      "MANJERI",
-      "MALAPPURAM",
-      "KOZHIKODE",
-      "KANNUR",
-      "THALASSERY",
-      "VADAKARA",
-      "PERAMBRA",
-      "KALIKAVU",
-      "MUVATTUPUZHA",
-      "PERUMBAVOOR",
-      "ALUVA",
-      "ERNAKULAM",
-    ];
-
-    const fullText =
-      htmlToText(html);
-
-    for (const stop of knownStops) {
-      const escaped =
-        stop.replace(
-          /[.*+?^${}()|[\]\\]/g,
-          "\\$&"
-        );
-
-      /*
-       * Station -> time
-       */
-      const afterRegex =
-        new RegExp(
-          `${escaped}\\s*(?:[-|:>→➔]*)?\\s*(\\d{1,2}:\\d{2})`,
-          "i"
-        );
-
-      const afterMatch =
-        fullText.match(afterRegex);
-
-      if (afterMatch) {
-        addRouteStop(
-          stop,
-          afterMatch[1]
-        );
-        continue;
-      }
-
-      /*
-       * Time -> station
-       */
-      const beforeRegex =
-        new RegExp(
-          `(\\d{1,2}:\\d{2})\\s*(?:[-|:>→➔]*)?\\s*${escaped}`,
-          "i"
-        );
-
-      const beforeMatch =
-        fullText.match(beforeRegex);
-
-      if (beforeMatch) {
-        addRouteStop(
-          stop,
-          beforeMatch[1]
-        );
-      }
-    }
-  }
-
-  /*
-   * Remove duplicate consecutive stops.
-   */
-  const cleaned:
-    MyBusYatraRouteStop[] = [];
-
-  for (const stop of route) {
-    const previous =
-      cleaned[cleaned.length - 1];
-
+    /*
+     * Station before time.
+     */
     if (
-      previous &&
-      normalizeName(previous.name) ===
-        normalizeName(stop.name)
+      before &&
+      before.length >= 2
     ) {
-      continue;
+      addStop(
+        before,
+        time
+      );
     }
 
-    cleaned.push(stop);
+    /*
+     * Station after time.
+     */
+    if (
+      after &&
+      after.length >= 2
+    ) {
+      /*
+       * Don't treat long service-description
+       * text as a station.
+       */
+      const station =
+        after
+          .split(/\s{2,}|\|/)
+          [0];
+
+      if (
+        station &&
+        station.length < 80
+      ) {
+        addStop(
+          station,
+          time
+        );
+      }
+    }
   }
 
-  return cleaned;
+  /*
+   * If the HTML parser has merged several stations
+   * into one line, try matching known stop names
+   * against that line.
+   */
+  const knownNames = [
+    "MANANTHAVADY",
+    "NALAM MILE",
+    "PANAMARAM",
+    "KAMBALAKKAD",
+    "KALPETTA",
+    "VYTHIRI",
+    "THAMARASSERY",
+    "ADIVAARAM",
+    "MUKKAM",
+    "AREEKODE",
+    "NILAMBUR",
+    "MEENANGADI",
+    "SULTHAN BATHERY",
+    "PULPALLY",
+    "KANNUR",
+    "THALASSERY",
+    "KOZHIKODE",
+    "MALAPPURAM",
+    "MANJERI",
+  ];
+
+  for (const line of lines) {
+    const timeMatches =
+      Array.from(
+        line.matchAll(
+          /\b\d{1,2}:\d{2}(?:\s*(?:am|pm))?\b/gi
+        )
+      );
+
+    for (const stopName of knownNames) {
+      const index =
+        line
+          .toLowerCase()
+          .indexOf(
+            stopName.toLowerCase()
+          );
+
+      if (index === -1) {
+        continue;
+      }
+
+      let closestTime:
+        string | undefined;
+
+      let closestDistance =
+        Number.MAX_SAFE_INTEGER;
+
+      for (const timeMatch of timeMatches) {
+        const timeIndex =
+          timeMatch.index ?? 0;
+
+        const distance =
+          Math.abs(
+            timeIndex - index
+          );
+
+        if (
+          distance <
+          closestDistance
+        ) {
+          closestDistance =
+            distance;
+
+          closestTime =
+            timeMatch[0];
+        }
+      }
+
+      addStop(
+        stopName,
+        closestTime
+      );
+    }
+  }
+
+  /*
+   * Remove accidental duplicate consecutive
+   * stations while preserving route order.
+   */
+  return route.filter(
+    (stop, index) => {
+      if (index === 0) {
+        return true;
+      }
+
+      return (
+        normalizeName(
+          stop.name
+        ) !==
+        normalizeName(
+          route[index - 1].name
+        )
+      );
+    }
+  );
 }
+
 /*
- * ----------------------------------------------------
- * SERVICE INFORMATION PARSER
- * ----------------------------------------------------
+ * ---------------------------------------------------------
+ * MYBUSYATRA SERVICE INFORMATION
+ * ---------------------------------------------------------
  */
 
 function extractMyBusYatraService(
@@ -1168,23 +930,46 @@ function extractMyBusYatraService(
   const text =
     htmlToText(html);
 
+  const lines =
+    htmlToLines(html);
+
   let serviceName =
-    "KSRTC Bus";
+    "KSRTC";
+
+  let vehicleNumber:
+    | string
+    | undefined;
+
+  let routeName:
+    | string
+    | undefined;
+
+  let direction:
+    | string
+    | undefined;
 
   /*
-   * Common service names:
-   *
-   * KSRTC Fast Passenger
-   * KSRTC Super Fast
-   * KSRTC Town to Town Ordinary
+   * Vehicle number.
+   */
+  const vehicleMatch =
+    text.match(
+      /vehicle\s*(?:no|number)?\s*[:#-]?\s*([A-Z0-9 -]{5,20})/i
+    );
+
+  if (vehicleMatch) {
+    vehicleNumber =
+      vehicleMatch[1].trim();
+  }
+
+  /*
+   * Common MyBusYatra service names.
    */
   const servicePatterns = [
-    /KSRTC\s+(FAST PASSENGER)/i,
-    /KSRTC\s+(SUPER FAST)/i,
-    /KSRTC\s+(TOWN TO TOWN ORDINARY)/i,
-    /KSRTC\s+(ORDINARY)/i,
-    /KSRTC\s+(SUPER EXPRESS)/i,
-    /KSRTC\s+(LIMITED STOP)/i,
+    /KSRTC\s+(?:SUPER DELUXE AIR BUS|PREMIUM SUPERFAST|SUPER FAST|FAST PASSENGER|LIMITED STOP FAST PASSENGER|LIMITED STOP ORDINARY|TOWN TO TOWN ORDINARY|MINNAL DELUXE|ORDINARY|AC SEATER)/i,
+
+    /KSRTC\.\s*(?:SUPER FAST|FAST PASSENGER|PREMIUM SUPERFAST)/i,
+
+    /[A-Z][A-Z .-]{4,}\s+(?:PRIVATE BUS|PRIVATE)/i,
   ];
 
   for (
@@ -1195,75 +980,56 @@ function extractMyBusYatraService(
 
     if (match) {
       serviceName =
-        `KSRTC ${match[1]
-          .trim()
+        match[0]
           .replace(
             /\s+/g,
             " "
-          )}`;
+          )
+          .trim();
 
       break;
     }
   }
 
   /*
-   * Vehicle number.
-   *
-   * Example:
-   *
-   * Vehicle No: AX627
+   * Try route/direction information.
    */
-  const vehicleMatch =
+  const directionMatch =
     text.match(
-      /Vehicle\s*(?:No\.?|Number)\s*[:\-]?\s*([A-Z0-9-]+)/i
+      /([A-Za-z .'-]{2,})\s*→\s*([A-Za-z .'-]{2,})/i
     );
 
-  const vehicleNumber =
-    vehicleMatch?.[1]
-      ?.trim();
+  if (directionMatch) {
+    direction =
+      `${directionMatch[1].trim()} → ${directionMatch[2].trim()}`;
+
+    routeName =
+      direction;
+  }
 
   /*
-   * Route:
-   *
-   * MANANTHAVADY → NILAMBUR
-   *
-   * Also support:
-   *
-   * MANANTHAVADY - NILAMBUR
+   * If no service was found from the page,
+   * inspect individual lines.
    */
-  const routeMatch =
-    text.match(
-      /([A-Z][A-Z .'-]{2,50})\s*(?:→|➔|->|-)\s*([A-Z][A-Z .'-]{2,50})/
-    );
+  if (
+    serviceName === "KSRTC"
+  ) {
+    for (const line of lines) {
+      if (
+        /KSRTC/i.test(line) ||
+        /Private Bus/i.test(line)
+      ) {
+        serviceName =
+          line
+            .replace(
+              /\s+/g,
+              " "
+            )
+            .trim()
+            .slice(0, 120);
 
-  let routeName:
-    | string
-    | undefined;
-
-  let direction:
-    | string
-    | undefined;
-
-  if (routeMatch) {
-    const from =
-      cleanRouteStation(
-        routeMatch[1]
-      );
-
-    const to =
-      cleanRouteStation(
-        routeMatch[2]
-      );
-
-    if (
-      from &&
-      to
-    ) {
-      routeName =
-        `${from} → ${to}`;
-
-      direction =
-        `${from} → ${to}`;
+        break;
+      }
     }
   }
 
@@ -1276,260 +1042,333 @@ function extractMyBusYatraService(
 }
 
 /*
- * ----------------------------------------------------
- * FETCH ONE COMPLETE MYBUSYATRA SERVICE
- * ----------------------------------------------------
- *
- * This opens the actual service page and
- * reads the complete ordered route.
- *
- * We do NOT create a fake:
- *
- * MANANTHAVADY → NALAM MILE
- *
- * trip.
- *
- * Instead, the actual bus route is retained.
+ * ---------------------------------------------------------
+ * CREATE TRIP FROM MYBUSYATRA ROUTE
+ * ---------------------------------------------------------
  */
+
+function createMyBusYatraTrip(
+  route: MyBusYatraRouteStop[],
+  service: MyBusYatraService,
+  index: number
+): TransportTrip | null {
+  if (
+    route.length < 2
+  ) {
+    return null;
+  }
+
+  const stops: ScheduledStop[] =
+    route.map(
+      (item, sequence) => ({
+        stop: {
+          id: makeStopId(
+            item.name
+          ),
+          name: item.name,
+        },
+
+        sequence,
+
+        arrivalTime:
+          item.arrival ?? null,
+
+        departureTime:
+          item.departure ?? null,
+      })
+    );
+
+  const isKsrtc =
+    /ksrtc|kerala state road/i.test(
+      service.serviceName
+    ) ||
+    /ksrtc/i.test(
+      service.routeName ?? ""
+    );
+
+  return {
+    id:
+      `mybusyatra-${service.vehicleNumber || "service"}-${index}-${service.serviceName}`
+          .toLowerCase()
+      .replace(
+        /[^a-z0-9]+/g,
+        "-"
+      ),
+
+    vehicleNumber:
+      service.vehicleNumber,
+
+    serviceName:
+      service.serviceName,
+
+    operator:
+      isKsrtc
+        ? "KSRTC"
+        : "Private Bus",
+
+    mode: "bus",
+
+    source:
+      "mybusyatra",
+
+    stops,
+
+    isLive: false,
+  };
+}
+
+/*
+ * ---------------------------------------------------------
+ * FETCH ONE MYBUSYATRA SERVICE PAGE
+ * ---------------------------------------------------------
+ */
+
 async function fetchMyBusYatraService(
   url: string,
-  from: string,
-  to: string
+  index: number
 ): Promise<TransportTrip | null> {
   try {
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131 Safari/537.36",
-        Accept:
-          "text/html,application/xhtml+xml",
-      },
-      cache: "no-store",
-    });
+    const response =
+      await fetch(
+        url,
+        {
+          headers: {
+            Accept:
+              "text/html,application/xhtml+xml",
+            "User-Agent":
+              "Mozilla/5.0",
+          },
+          cache:
+            "no-store",
+        }
+      );
 
     if (!response.ok) {
       return null;
     }
 
-    const html = await response.text();
+    const html =
+      await response.text();
+
+    const route =
+      extractMyBusYatraRoute(
+        html
+      );
+
+    if (
+      route.length < 2
+    ) {
+      return null;
+    }
 
     const service =
-      extractMyBusYatraService(html);
+      extractMyBusYatraService(
+        html
+      );
 
     if (!service) {
       return null;
     }
 
-    const route =
-      extractMyBusYatraRoute(html);
+    return createMyBusYatraTrip(
+      route,
+      service,
+      index
+    );
+  } catch (error) {
+    console.warn(
+      "MyBusYatra service failed:",
+      error
+    );
 
-    if (route.length < 2) {
-      return null;
-    }
-
-    /*
-     * Find the requested origin and
-     * destination in the REAL route.
-     */
-    const fromIndex =
-      route.findIndex((stop) =>
-        stationMatches(
-          stop.name,
-          from
-        )
-      );
-
-    const toIndex =
-      route.findIndex((stop) =>
-        stationMatches(
-          stop.name,
-          to
-        )
-      );
-
-    /*
-     * Direction matters.
-     *
-     * The bus must actually travel
-     * FROM → TO.
-     */
-    if (
-      fromIndex < 0 ||
-      toIndex < 0 ||
-      fromIndex >= toIndex
-    ) {
-      return null;
-    }
-
-    /*
-     * Select only the requested
-     * portion of the actual route.
-     */
-    const selectedRoute =
-      route.slice(
-        fromIndex,
-        toIndex + 1
-      );
-
-    if (
-      selectedRoute.length < 2
-    ) {
-      return null;
-    }
-
-    const firstStop =
-      selectedRoute[0];
-
-    const lastStop =
-      selectedRoute[
-        selectedRoute.length - 1
-      ];
-
-    const departure =
-      firstStop.departure ??
-      firstStop.arrival ??
-      "";
-
-    const arrival =
-      lastStop.arrival ??
-      lastStop.departure ??
-      "";
-
-    /*
-     * Preserve the REAL service
-     * endpoints.
-     *
-     * Example:
-     *
-     * KSRTC Fast Passenger
-     * MANANTHAVADY → NILAMBUR
-     *
-     * even if the user searches:
-     *
-     * MANANTHAVADY → NALAM MILE
-     */
-    const fullFirst =
-      route[0]?.name ?? from;
-
-    const fullLast =
-      route[
-        route.length - 1
-      ]?.name ?? to;
-
-    const id =
-      [
-        "mybusyatra",
-        service.vehicleNumber ||
-          service.serviceName,
-        fullFirst,
-        fullLast,
-        departure,
-      ]
-        .join("-")
-        .toLowerCase()
-        .replace(
-          /[^a-z0-9]+/g,
-          "-"
-        );
-
-    return {
-      id,
-
-      vehicleNumber:
-        service.vehicleNumber,
-
-      serviceName:
-        service.serviceName,
-
-      operator:
-        "KSRTC",
-
-      mode:
-        "bus",
-
-      source:
-        "public-transport-api",
-
-      stops:
-        selectedRoute.map(
-          (
-            stop,
-            index
-          ) => {
-            const transportStop:
-              TransportStop = {
-              id:
-                makeStopId(
-                  stop.name
-                ),
-              name:
-                stop.name,
-            };
-
-            return {
-              stop:
-                transportStop,
-
-              sequence:
-                index,
-
-              arrivalTime:
-                stop.arrival ??
-                null,
-
-              departureTime:
-                stop.departure ??
-                null,
-            };
-          }
-        ),
-
-      isLive: false,
-    };
-  } catch {
     return null;
   }
 }
 
 /*
- * ----------------------------------------------------
- * FETCH MYBUSYATRA TIMETABLE
- * ----------------------------------------------------
+ * ---------------------------------------------------------
+ * PARSE MYBUSYATRA TIMETABLE ROWS
+ * ---------------------------------------------------------
+ */
+
+function parseMyBusYatraTimetableRows(
+  html: string,
+  from: string,
+  to: string
+): TransportTrip[] {
+  const lines =
+    htmlToLines(html);
+
+  const trips: TransportTrip[] =
+    [];
+
+  const timePattern =
+    /\b\d{1,2}:\d{2}(?:\s*(?:am|pm))?\b/gi;
+
+  let index = 0;
+
+  for (const line of lines) {
+    const times =
+      line.match(timePattern);
+
+    if (
+      !times ||
+      times.length < 2
+    ) {
+      continue;
+    }
+
+    const hasBusIndicator =
+      /KSRTC|PRIVATE BUS|BUS/i.test(
+        line
+      );
+
+    if (!hasBusIndicator) {
+      continue;
+    }
+
+    const fromName =
+      resolveStopName(from);
+
+    const toName =
+      resolveStopName(to);
+
+    let serviceName =
+      "Bus Service";
+
+    const serviceMatch =
+      line.match(
+        /(KSRTC[^|]+|[^|]+PRIVATE BUS[^|]*)/i
+      );
+
+    if (serviceMatch) {
+      serviceName =
+        serviceMatch[1]
+          .replace(
+            /\s+/g,
+            " "
+          )
+          .trim()
+          .slice(0, 120);
+    }
+
+    const isKsrtc =
+      /KSRTC/i.test(
+        serviceName
+      );
+
+    const departure =
+      times[0];
+
+    const arrival =
+      times[1];
+
+    const stops: ScheduledStop[] =
+      [
+        {
+          stop: {
+            id: makeStopId(
+              fromName
+            ),
+            name: fromName,
+          },
+
+          sequence: 0,
+
+          arrivalTime:
+            departure,
+
+          departureTime:
+            departure,
+        },
+
+        {
+          stop: {
+            id: makeStopId(
+              toName
+            ),
+            name: toName,
+          },
+
+          sequence: 1,
+
+          arrivalTime:
+            arrival,
+
+          departureTime:
+            arrival,
+        },
+      ];
+
+    const vehicleMatch =
+      line.match(
+        /\b(KL\s*[-A-Z0-9]{5,})\b/i
+      );
+
+    trips.push({
+      id:
+        `mybusyatra-row-${index++}-${departure}-${arrival}-${serviceName}`
+          .toLowerCase()
+          .replace(
+            /[^a-z0-9]+/g,
+            "-"
+          ),
+
+      vehicleNumber:
+        vehicleMatch?.[1],
+
+      serviceName,
+
+      operator:
+        isKsrtc
+          ? "KSRTC"
+          : "Private Bus",
+
+      mode: "bus",
+
+      source:
+        "mybusyatra",
+
+      stops,
+
+      isLive: false,
+    });
+  }
+
+  return trips;
+}
+
+/*
+ * ---------------------------------------------------------
+ * MYBUSYATRA FETCH
+ * ---------------------------------------------------------
  */
 
 async function fetchFromMyBusYatra(
   from: string,
   to: string
 ): Promise<TransportTrip[]> {
-  const slugFrom =
-    myBusYatraSlug(from);
-
-  const slugTo =
-    myBusYatraSlug(to);
-
-  if (
-    !slugFrom ||
-    !slugTo
-  ) {
-    return [];
-  }
-
-  const url =
-    `${MYBUSYATRA_BASE_URL}/bus/${slugFrom}-to-${slugTo}`;
+  const timetableUrl =
+    myBusYatraTimetableUrl(
+      from,
+      to
+    );
 
   try {
-    const response = await fetch(
-      url,
-      {
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131 Safari/537.36",
-          Accept:
-            "text/html,application/xhtml+xml",
-        },
-        cache: "no-store",
-      }
-    );
+    const response =
+      await fetch(
+        timetableUrl,
+        {
+          headers: {
+            Accept:
+              "text/html,application/xhtml+xml",
+            "User-Agent":
+              "Mozilla/5.0",
+          },
+          cache:
+            "no-store",
+        }
+      );
 
     if (!response.ok) {
       return [];
@@ -1538,84 +1377,101 @@ async function fetchFromMyBusYatra(
     const html =
       await response.text();
 
+    const trips: TransportTrip[] =
+      [];
+
     /*
-     * Get the individual service
-     * pages from the timetable.
+     * First parse service/detail links.
      */
     const detailLinks =
       extractMyBusYatraDetailLinks(
         html
       );
 
-    if (
-      detailLinks.length === 0
-    ) {
-      return [];
-    }
-
-    const trips:
-      TransportTrip[] = [];
-
     /*
-     * Process a few service pages
-     * at a time instead of requesting
-     * everything simultaneously.
+     * Limit requests so Vercel is not
+     * overloaded.
      */
-    const maxConcurrent = 8;
+    const limitedLinks =
+      detailLinks.slice(0, 40);
 
-    for (
-      let i = 0;
-      i < detailLinks.length;
-      i += maxConcurrent
-    ) {
-      const batch =
-        detailLinks.slice(
-          i,
-          i + maxConcurrent
-        );
+    const detailResults =
+      await Promise.all(
+        limitedLinks.map(
+          (url, index) =>
+            fetchMyBusYatraService(
+              url,
+              index
+            )
+        )
+      );
 
-      const results =
-        await Promise.all(
-          batch.map(
-            (detailLink) =>
-              fetchMyBusYatraService(
-                detailLink,
-                from,
-                to
-              )
-          )
-        );
-
-      for (
-        const trip of results
-      ) {
-        if (trip) {
-          trips.push(trip);
-        }
+    for (const trip of detailResults) {
+      if (trip) {
+        trips.push(trip);
       }
     }
 
-    return trips;
-  } catch {
+    /*
+     * Also parse the timetable itself.
+     *
+     * This gives us a fallback when a
+     * service-detail link cannot be found.
+     */
+    const rowTrips =
+      parseMyBusYatraTimetableRows(
+        html,
+        from,
+        to
+      );
+
+    trips.push(
+      ...rowTrips
+    );
+
+    /*
+     * Only return buses that actually
+     * contain the searched stops in
+     * the correct order.
+     */
+    return findDirectTrips(
+      trips,
+      from,
+      to
+    );
+  } catch (error) {
+    console.warn(
+      "MyBusYatra timetable failed:",
+      error
+    );
+
     return [];
   }
 }
 
 /*
- * ----------------------------------------------------
- * DEDUPLICATE TRIPS
- * ----------------------------------------------------
+ * ---------------------------------------------------------
+ * DEDUPLICATION
+ * ---------------------------------------------------------
  */
 
 function dedupeTrips(
   trips: TransportTrip[]
 ): TransportTrip[] {
-  const seen = new Set<string>();
-  const result: TransportTrip[] = [];
+  const seen =
+    new Set<string>();
+
+  const result:
+    TransportTrip[] = [];
 
   for (const trip of trips) {
-    const firstStop = trip.stops[0];
-    const lastStop = trip.stops[trip.stops.length - 1];
+    const firstStop =
+      trip.stops[0];
+
+    const lastStop =
+      trip.stops[
+        trip.stops.length - 1
+      ];
 
     const departure =
       firstStop?.departureTime ??
@@ -1627,15 +1483,22 @@ function dedupeTrips(
       lastStop?.departureTime ??
       "";
 
+    const route =
+      trip.stops
+        .map(
+          (stop) =>
+            `${stop.stop.name}:${stop.arrivalTime ?? ""}:${stop.departureTime ?? ""}`
+        )
+        .join("|");
+
     const key = [
       trip.operator ?? "",
       trip.vehicleNumber ?? "",
       trip.serviceName ?? "",
+      trip.source ?? "",
       departure,
       arrival,
-      trip.stops
-        .map((stop) => stop.stop.name)
-        .join("|"),
+      route,
     ].join("::");
 
     if (seen.has(key)) {
@@ -1648,93 +1511,153 @@ function dedupeTrips(
 
   return result;
 }
+
 /*
- * ----------------------------------------------------
- * MAIN TRANSPORT SEARCH
- * ----------------------------------------------------
+ * ---------------------------------------------------------
+ * MAIN SEARCH
+ * ---------------------------------------------------------
  */
 
 export async function searchTransport(
   from: string,
   to: string
 ): Promise<TransportSearchResult> {
-  const fromStop =
+  const resolvedFrom =
     resolveStopName(from);
 
-  const toStop =
+  const resolvedTo =
     resolveStopName(to);
 
   if (
-    !fromStop ||
-    !toStop
+    !resolvedFrom ||
+    !resolvedTo
   ) {
-    return createSearchResult(
-      from,
-      to,
-      []
-    );
+    return {
+      from: resolvedFrom,
+      to: resolvedTo,
+      directJourneys: [],
+      connectingJourneys: [],
+      searchedAt:
+        new Date().toISOString(),
+    };
+  }
+
+  if (
+    normalizeName(
+      resolvedFrom
+    ) ===
+    normalizeName(
+      resolvedTo
+    )
+  ) {
+    return {
+      from: resolvedFrom,
+      to: resolvedTo,
+      directJourneys: [],
+      connectingJourneys: [],
+      searchedAt:
+        new Date().toISOString(),
+    };
   }
 
   /*
-   * Fetch all available sources.
+   * Fetch all sources independently.
    *
-   * A failure in one source should
-   * not break the complete search.
+   * If one source fails, the other
+   * sources still work.
    */
   const [
     apiTrips,
     datasetTrips,
-    myBusTrips,
+    myBusYatraTrips,
   ] = await Promise.all([
     fetchFromScheduleApi(
-      fromStop,
-      toStop
+      resolvedFrom,
+      resolvedTo
     ),
 
     fetchFromDataset(),
 
     fetchFromMyBusYatra(
-      fromStop,
-      toStop
+      resolvedFrom,
+      resolvedTo
     ),
   ]);
 
   /*
-   * Combine and remove duplicates.
+   * Dataset contains complete routes.
    */
-  const allTrips =
-    dedupeTrips([
-      ...apiTrips,
-      ...datasetTrips,
-      ...myBusTrips,
-    ]);
-
-  /*
-   * IMPORTANT:
-   *
-   * A bus is considered direct only
-   * when FROM appears before TO in
-   * the same complete route.
-   */
-  const directTrips =
+  const privateDatasetTrips =
     findDirectTrips(
-      allTrips,
-      fromStop,
-      toStop
+      datasetTrips,
+      resolvedFrom,
+      resolvedTo
     );
 
-  return createSearchResult(
-    fromStop,
-    toStop,
-    directTrips
+  /*
+   * Validate API results too.
+   */
+  const privateApiDirectTrips =
+    findDirectTrips(
+      apiTrips,
+      resolvedFrom,
+      resolvedTo
+    );
+
+  /*
+   * Validate MyBusYatra results.
+   */
+  const ksrtcTrips =
+    findDirectTrips(
+      myBusYatraTrips,
+      resolvedFrom,
+      resolvedTo
+    );
+
+  const allTrips =
+    dedupeTrips([
+      ...privateApiDirectTrips,
+      ...privateDatasetTrips,
+      ...ksrtcTrips,
+    ]);
+
+  console.log(
+    "GECW Go search:",
+    `${resolvedFrom} -> ${resolvedTo}`,
+    {
+      privateApi:
+        privateApiDirectTrips.length,
+
+      privateDataset:
+        privateDatasetTrips.length,
+
+      myBusYatra:
+        ksrtcTrips.length,
+
+      total:
+        allTrips.length,
+    }
   );
-} 
-/**
- * Backward-compatible API used by /api/buses/search
+
+  return createSearchResult(
+    resolvedFrom,
+    resolvedTo,
+    allTrips
+  );
+}
+
+/*
+ * ---------------------------------------------------------
+ * COMPATIBILITY EXPORT
+ * ---------------------------------------------------------
  */
+
 export async function searchBuses(
   from: string,
   to: string
 ): Promise<TransportSearchResult> {
-  return searchTransport(from, to);
+  return searchTransport(
+    from,
+    to
+  );
 }
