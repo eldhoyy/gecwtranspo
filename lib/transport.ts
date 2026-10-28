@@ -1703,3 +1703,12 @@ export async function searchTransport(
     directTrips
   );
 } 
+/**
+ * Backward-compatible API used by /api/buses/search
+ */
+export async function searchBuses(
+  from: string,
+  to: string
+): Promise<TransportSearchResult> {
+  return searchTransport(from, to);
+}
