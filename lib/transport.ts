@@ -1545,88 +1545,66 @@ async function fetchMyBusYatraDetail(
   url: string
 ): Promise<TransportTrip | null> {
   try {
-    const response =
-      await fetch(
-        url,
-        {
-          headers: {
-            Accept:
-              "text/html",
-          },
-          cache: "no-store",
-        }
-      );
+    const response = await fetch(url, {
+      headers: {
+        Accept: "text/html",
+      },
+      cache: "no-store",
+    });
 
     if (!response.ok) {
       return null;
     }
 
-    const html =
-      await response.text();
+    const html = await response.text();
 
-    const stops =
-      parseMyBusYatraRoute(
-        html
-      );
+    const stops = parseMyBusYatraRoute(html);
 
-    if (
-      stops.length < 2
-    ) {
+    if (stops.length < 2) {
       return null;
     }
 
-    const vehicleMatch =
-      html.match(
-        /vehicle\s*(?:no|number)?\s*[:\-]?\s*([A-Z0-9 -]{4,20})/i
-      );
+    const vehicleMatch = html.match(
+      /vehicle\s*(?:no|number)?\s*[:\-]?\s*([A-Z0-9 -]{4,20})/i
+    );
 
     const vehicleNumber =
-      vehicleMatch?.[1]
-        ?.trim() ||
-      undefined;
+      vehicleMatch?.[1]?.trim() || undefined;
 
-    const titleMatch =
-      html.match(
-        /<title[^>]*>([\s\S]*?)<\/title>/i
-      );
+    const titleMatch = html.match(
+      /<title[^>]*>([\s\S]*?)<\/title>/i
+    );
 
-    const serviceName =
-      titleMatch?.[1]
-        ? decodeHtml(
-            titleMatch[1]
-          )
-            .replace(
-              /\s+/g,
-              " "
-            )
-            .trim()
-        : undefined;
+    const serviceName = titleMatch?.[1]
+      ? decodeHtml(titleMatch[1])
+          .replace(/\s+/g, " ")
+          .trim()
+      : undefined;
 
-    const operator =
-      serviceName
-        ?.toLowerCase()
-        .includes("ksrtc")
-        ? "KSRTC"
-        : "Private Bus";
+    const isKsrtc =
+      serviceName?.toLowerCase().includes("ksrtc") ||
+      html.toLowerCase().includes("ksrtc");
 
     return {
-      id:
-        `mybusyatra-${slugify(
-          vehicleNumber ??
-            serviceName ??
-            url
-        )}`,
+      id: `mybusyatra-${slugify(
+        vehicleNumber ?? serviceName ?? url
+      )}`,
 
       vehicleNumber,
 
       serviceName,
 
-      operator,
+      operator: isKsrtc
+        ? "KSRTC"
+        : "Private Bus",
 
       mode: "bus",
 
-      source:
-        "private-bus-api",
+      // IMPORTANT:
+      // Keep KSRTC separate from private-bus data.
+      source: isKsrtc
+        ? "ksrtc"
+        : "private-bus-api",
 
       stops,
 
@@ -1657,19 +1635,23 @@ async function fetchFromMyBusYatra(
         to
       );
 
-    const response =
-      await fetch(
-        timetableUrl,
-        {
-          headers: {
-            Accept:
-              "text/html",
-          },
-          cache: "no-store",
-        }
-      );
+    const response = await fetch(
+      timetableUrl,
+      {
+        headers: {
+          Accept: "text/html",
+        },
+        cache: "no-store",
+      }
+    );
 
     if (!response.ok) {
+      console.warn(
+        "MyBusYatra timetable status:",
+        response.status,
+        timetableUrl
+      );
+
       return [];
     }
 
@@ -1681,53 +1663,81 @@ async function fetchFromMyBusYatra(
         html
       );
 
-    if (
-      links.length === 0
-    ) {
+    if (links.length === 0) {
+      console.warn(
+        "No MyBusYatra detail links:",
+        timetableUrl
+      );
+
       return [];
     }
 
-    const trips:
-      TransportTrip[] = [];
+    const trips: TransportTrip[] = [];
 
     /*
-     * Limit external requests so a search
-     * does not request an excessive number
-     * of service pages.
+     * Don't request 40 pages one-by-one.
+     * Fetch them concurrently in small batches.
      */
     const limitedLinks =
       links.slice(0, 40);
 
+    const batchSize = 8;
+
     for (
-      const link of limitedLinks
+      let i = 0;
+      i < limitedLinks.length;
+      i += batchSize
     ) {
-      const trip =
-        await fetchMyBusYatraDetail(
-          link
+      const batch =
+        limitedLinks.slice(
+          i,
+          i + batchSize
         );
 
-      if (!trip) {
-        continue;
-      }
-
-      /*
-       * Only accept a service when BOTH
-       * requested stops are actually present
-       * in its real ordered route.
-       */
-      const matches =
-        findDirectTrips(
-          [trip],
-          from,
-          to
+      const results =
+        await Promise.all(
+          batch.map((link) =>
+            fetchMyBusYatraDetail(
+              link
+            )
+          )
         );
 
-      if (
-        matches.length > 0
+      for (
+        const trip of results
       ) {
-        trips.push(trip);
+        if (!trip) {
+          continue;
+        }
+
+        /*
+         * Check the actual complete route.
+         * This is what allows intermediate stops.
+         */
+        const matches =
+          findDirectTrips(
+            [trip],
+            from,
+            to
+          );
+
+        if (
+          matches.length > 0
+        ) {
+          trips.push(trip);
+        }
       }
     }
+
+    console.log(
+      "MyBusYatra trips:",
+      trips.length,
+      "KSRTC:",
+      trips.filter(
+        (trip) =>
+          trip.source === "ksrtc"
+      ).length
+    );
 
     return trips;
   } catch (error) {
