@@ -58,6 +58,8 @@ const MYBUS_SLUG_OVERRIDES:
   Record<string, string> = {
     THALAPUZHA: "thalappuzha",
     MANANTHAVADY: "mananthavady",
+    NALAM_MILE: "nalam-mile",
+    "4TH MILE": "4th-mile",
     KALPETTA: "kalpetta",
     PANAMARAM: "panamaram",
     KAMBALAKKAD: "kambalakkad",
