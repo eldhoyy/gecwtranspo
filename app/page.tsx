@@ -254,20 +254,82 @@ function getJourneyStops(journey: Journey) {
     .sort((a, b) => a.sequence - b.sequence);
 }
 
-function sortJourneys(journeys: Journey[]) {
-  return [...journeys].sort((a, b) => {
-    if (a.isPast !== b.isPast) {
-      return a.isPast ? 1 : -1;
-    }
+function timeToMinutes(
+  value?: string | null
+): number {
+  if (!value) {
+    return Number.MAX_SAFE_INTEGER;
+  }
 
-    if (a.transfers !== b.transfers) {
-      return a.transfers - b.transfers;
-    }
+  const text = value
+    .trim()
+    .toLowerCase();
 
-    return (a.departureTime || "").localeCompare(
-      b.departureTime || ""
-    );
-  });
+  const match = text.match(
+    /^(\d{1,2}):(\d{2})\s*(am|pm)?$/
+  );
+
+  if (!match) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+
+  let hour = Number(match[1]);
+  const minute = Number(match[2]);
+  const period = match[3];
+
+  if (period === "am") {
+    if (hour === 12) {
+      hour = 0;
+    }
+  }
+
+  if (period === "pm") {
+    if (hour !== 12) {
+      hour += 12;
+    }
+  }
+
+  return (
+    hour * 60 +
+    minute
+  );
+}
+
+function sortJourneys(
+  journeys: Journey[]
+) {
+  return [...journeys].sort(
+    (a, b) => {
+      /*
+       * Direct buses first.
+       */
+      if (
+        a.transfers !==
+        b.transfers
+      ) {
+        return (
+          a.transfers -
+          b.transfers
+        );
+      }
+
+      /*
+       * Then STRICT chronological
+       * departure order.
+       *
+       * Past buses are NOT moved
+       * to the bottom.
+       */
+      return (
+        timeToMinutes(
+          a.departureTime
+        ) -
+        timeToMinutes(
+          b.departureTime
+        )
+      );
+    }
+  );
 }
 
 export default function Home() {
