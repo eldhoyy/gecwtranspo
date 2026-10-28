@@ -552,64 +552,7 @@ function findDirectTrips(
    PRIVATE BUS SCHEDULE API
    ========================================================= */
 
-async function fetchFromScheduleApi(
-  from: string,
-  to: string
-): Promise<TransportTrip[]> {
-  const url =
-    `${SCHEDULE_API_URL}?departure=${encodeURIComponent(
-      from
-    )}&destination=${encodeURIComponent(
-      to
-    )}&restrict=false`;
 
-  try {
-    const response =
-      await fetch(url, {
-        headers: {
-          Accept: "application/json",
-        },
-        cache: "no-store",
-      });
-
-    if (!response.ok) {
-      console.warn(
-        "Schedule API status:",
-        response.status
-      );
-
-      return [];
-    }
-
-    const data: unknown =
-      await response.json();
-
-    if (!Array.isArray(data)) {
-      return [];
-    }
-
-    return data
-      .map((item, index) =>
-        convertApiTrip(
-          item as ApiTrip,
-          index
-        )
-      )
-      .filter(
-        (
-          trip
-        ): trip is TransportTrip =>
-          trip !== null
-      );
-  } catch (error) {
-    console.warn(
-      "Private bus schedule API failed:",
-      error
-    );
-
-    return [];
-  }
-}
 
 /* =========================================================
    FULL ROUTE API
