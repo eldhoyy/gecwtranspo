@@ -1326,10 +1326,10 @@ function parseMyBusYatraTimetableRows(
 
       mode: "bus",
 
-      source:
-        "mybusyatra",
+source:
+  "private-bus-api",
 
-      stops,
+stops,
 
       isLive: false,
     });
