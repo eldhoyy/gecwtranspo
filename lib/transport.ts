@@ -1985,15 +1985,6 @@ export async function searchTransport(
       10000,
       []
     ),
-
-    withTimeout(
-  getKsrtcTrips(
-    fromName,
-    toName
-  ),
-  30000,
-  []
-),
   ]);
 
   /*
