@@ -61,7 +61,7 @@ const welcomeMessages = [
 
 const quickRoutes = [
   {
-    from: "THALAPUZHA",
+    from: "GECW",
     to: "MANANTHAVADY",
     subtitle: "GECW Campus Route",
     icon: "🏫",
@@ -73,25 +73,25 @@ const quickRoutes = [
     icon: "🚌",
   },
   {
-    from: "THALAPUZHA",
+    from: "MANANTHAVADY",
     to: "SULTHAN BATHERY",
-    subtitle: "Direct Bus",
+    subtitle: "Wayanad Route",
     icon: "🚌",
   },
   {
     from: "SULTHAN BATHERY",
-    to: "THALAPUZHA",
-    subtitle: "GECW Return",
+    to: "MANANTHAVADY",
+    subtitle: "Wayanad Return",
     icon: "🚌",
   },
   {
-    from: "THALAPUZHA",
+    from: "GECW",
     to: "KANNUR",
     subtitle: "Intercity Route",
     icon: "🚌",
   },
   {
-    from: "THALAPUZHA",
+    from: "GECW",
     to: "THALASSERY",
     subtitle: "Intercity Route",
     icon: "🚌",
