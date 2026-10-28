@@ -661,72 +661,76 @@ function htmlToLines(
 function extractMyBusYatraDetailLinks(
   html: string
 ): string[] {
-  const links:
-    string[] = [];
+function extractMyBusYatraDetailLinks(
+  html: string
+): string[] {
+  const links: string[] = [];
 
+  /*
+   * MyBusYatra can expose service links
+   * in slightly different formats.
+   *
+   * Do not restrict this to /bus/ksrtc.
+   * The timetable may contain service URLs
+   * with different slugs.
+   */
   const regex =
     /href\s*=\s*["']([^"']+)["']/gi;
 
-  let match:
-    RegExpExecArray | null;
+  let match: RegExpExecArray | null;
 
-  while (
-    (match =
-      regex.exec(html))
-  ) {
-    const href =
-      decodeHtml(
-        match[1]
-      );
+  while ((match = regex.exec(html))) {
+    const href = decodeHtml(match[1]);
 
-    if (
-      !href
-        .toLowerCase()
-        .includes("/bus/")
-    ) {
+    if (!href) {
       continue;
     }
 
     try {
-      const url =
-        new URL(
-          href,
-          MYBUSYATRA_BASE_URL
-        );
+      const url = new URL(
+        href,
+        MYBUSYATRA_BASE_URL
+      );
 
-      const base =
-        new URL(
-          MYBUSYATRA_BASE_URL
-        );
+      const base = new URL(
+        MYBUSYATRA_BASE_URL
+      );
 
-      if (
-        url.hostname !==
-        base.hostname
-      ) {
+      if (url.hostname !== base.hostname) {
+        continue;
+      }
+
+      const pathname =
+        url.pathname.toLowerCase();
+
+      if (!pathname.startsWith("/bus/")) {
         continue;
       }
 
       /*
-       * KSRTC detail pages are used
-       * for public/KSRTC services.
+       * Ignore the timetable/listing page itself.
        *
-       * Private buses continue to come
-       * from the existing private API
-       * and Wayanad dataset.
+       * Example:
+       * /bus/mananthavady-to-nalam-mile
        */
-      if (
-        !url.pathname
-          .toLowerCase()
-          .startsWith(
-            "/bus/ksrtc"
-          )
-      ) {
+      const slug =
+        pathname
+          .replace(/^\/bus\//, "")
+          .replace(/\/+$/, "");
+
+      if (!slug) {
         continue;
       }
 
-      links.push(
-        url.toString()
-      );
+      /*
+       * A service-detail URL normally contains
+       * more information than the simple
+       * "from-to" timetable URL.
+       *
+       * Keep every /bus/ link here and let
+       * fetchMyBusYatraService() validate it.
+       */
+      links.push(url.toString());
     } catch {
       continue;
     }
@@ -1063,64 +1067,284 @@ function extractMyBusYatraRoute(
           /[.*+?^${}()|[\]\\]/g,
           "\\$&"
         );
+function extractMyBusYatraRoute(
+  html: string
+): MyBusYatraRouteStop[] {
+  const lines = htmlToLines(html);
 
-      const regex =
-        new RegExp(
-          `${escaped}[^\\d]{0,40}(\\d{1,2}:\\d{2})`,
-          "i"
-        );
+  const route: MyBusYatraRouteStop[] = [];
 
+  function addRouteStop(
+    name: string,
+    time: string
+  ) {
+    const station =
+      cleanRouteStation(name);
+
+    if (!station) {
+      return;
+    }
+
+    const normalizedTime =
+      normalizeTime(time);
+
+    if (!isTime(normalizedTime)) {
+      return;
+    }
+
+    const previous =
+      route[route.length - 1];
+
+    if (
+      previous &&
+      normalizeName(previous.name) ===
+        normalizeName(station)
+    ) {
+      return;
+    }
+
+    route.push({
+      name: station,
+      arrival: normalizedTime,
+      departure: normalizedTime,
+    });
+  }
+
+  /*
+   * --------------------------------------------------
+   * FORMAT 1
+   *
+   * MANANTHAVADY 14:35
+   * PANAMARAM 15:15
+   * --------------------------------------------------
+   */
+  for (const line of lines) {
+    const match =
+      line.match(
+        /^(.+?)\s+(\d{1,2}:\d{2})$/
+      );
+
+    if (!match) {
+      continue;
+    }
+
+    addRouteStop(
+      match[1],
+      match[2]
+    );
+  }
+
+  /*
+   * --------------------------------------------------
+   * FORMAT 2
+   *
+   * 14:35 MANANTHAVADY
+   * 15:15 PANAMARAM
+   * --------------------------------------------------
+   */
+  if (route.length < 2) {
+    route.length = 0;
+
+    for (const line of lines) {
       const match =
-        fullText.match(
-          regex
+        line.match(
+          /^(\d{1,2}:\d{2})\s+(.+?)$/
         );
 
       if (!match) {
         continue;
       }
 
-      const time =
-        normalizeTime(
-          match[1]
-        );
-
-      if (
-        !isTime(time)
-      ) {
-        continue;
-      }
-
-      route.push({
-        name: stop,
-        arrival: time,
-        departure: time,
-      });
+      addRouteStop(
+        match[2],
+        match[1]
+      );
     }
   }
 
   /*
-   * Remove duplicate consecutive
-   * station entries.
+   * --------------------------------------------------
+   * FORMAT 3
+   *
+   * Station and time on neighbouring lines.
+   *
+   * MANANTHAVADY
+   * 14:35
+   * PANAMARAM
+   * 15:15
+   * --------------------------------------------------
+   */
+  if (route.length < 2) {
+    route.length = 0;
+
+    for (
+      let i = 0;
+      i < lines.length - 1;
+      i++
+    ) {
+      const station =
+        cleanRouteStation(lines[i]);
+
+      if (!station) {
+        continue;
+      }
+
+      if (!isTime(lines[i + 1])) {
+        continue;
+      }
+
+      addRouteStop(
+        station,
+        lines[i + 1]
+      );
+    }
+  }
+
+  /*
+   * --------------------------------------------------
+   * FORMAT 4
+   *
+   * Time and station on neighbouring lines.
+   *
+   * 14:35
+   * MANANTHAVADY
+   * --------------------------------------------------
+   */
+  if (route.length < 2) {
+    route.length = 0;
+
+    for (
+      let i = 0;
+      i < lines.length - 1;
+      i++
+    ) {
+      if (!isTime(lines[i])) {
+        continue;
+      }
+
+      const station =
+        cleanRouteStation(lines[i + 1]);
+
+      if (!station) {
+        continue;
+      }
+
+      addRouteStop(
+        station,
+        lines[i]
+      );
+    }
+  }
+
+  /*
+   * --------------------------------------------------
+   * FORMAT 5
+   *
+   * Use known GECW Go stops as anchors.
+   *
+   * Example:
+   *
+   * MANANTHAVADY 14:35
+   * PANAMARAM 15:15
+   * KALPETTA 15:55
+   * --------------------------------------------------
+   */
+  if (route.length < 2) {
+    route.length = 0;
+
+    const knownStops = [
+      "MANANTHAVADY",
+      "NALAM MILE",
+      "4TH MILE",
+      "PANAMARAM",
+      "KAMBALAKKAD",
+      "KALPETTA",
+      "MEENANGADI",
+      "SULTHAN BATHERY",
+      "PULPALLY",
+      "VYTHIRI",
+      "THAMARASSERY",
+      "MUKKAM",
+      "NILAMBUR",
+      "MANJERI",
+      "MALAPPURAM",
+      "KOZHIKODE",
+      "KANNUR",
+      "THALASSERY",
+      "VADAKARA",
+      "PERAMBRA",
+      "KALIKAVU",
+      "MUVATTUPUZHA",
+      "PERUMBAVOOR",
+      "ALUVA",
+      "ERNAKULAM",
+    ];
+
+    const fullText =
+      htmlToText(html);
+
+    for (const stop of knownStops) {
+      const escaped =
+        stop.replace(
+          /[.*+?^${}()|[\]\\]/g,
+          "\\$&"
+        );
+
+      /*
+       * Station -> time
+       */
+      const afterRegex =
+        new RegExp(
+          `${escaped}\\s*(?:[-|:>→➔]*)?\\s*(\\d{1,2}:\\d{2})`,
+          "i"
+        );
+
+      const afterMatch =
+        fullText.match(afterRegex);
+
+      if (afterMatch) {
+        addRouteStop(
+          stop,
+          afterMatch[1]
+        );
+        continue;
+      }
+
+      /*
+       * Time -> station
+       */
+      const beforeRegex =
+        new RegExp(
+          `(\\d{1,2}:\\d{2})\\s*(?:[-|:>→➔]*)?\\s*${escaped}`,
+          "i"
+        );
+
+      const beforeMatch =
+        fullText.match(beforeRegex);
+
+      if (beforeMatch) {
+        addRouteStop(
+          stop,
+          beforeMatch[1]
+        );
+      }
+    }
+  }
+
+  /*
+   * Remove duplicate consecutive stops.
    */
   const cleaned:
     MyBusYatraRouteStop[] = [];
 
-  for (
-    const stop of route
-  ) {
+  for (const stop of route) {
     const previous =
-      cleaned[
-        cleaned.length - 1
-      ];
+      cleaned[cleaned.length - 1];
 
     if (
       previous &&
-      normalizeName(
-        previous.name
-      ) ===
-        normalizeName(
-          stop.name
-        )
+      normalizeName(previous.name) ===
+        normalizeName(stop.name)
     ) {
       continue;
     }
@@ -1130,7 +1354,6 @@ function extractMyBusYatraRoute(
 
   return cleaned;
 }
-
 /*
  * ----------------------------------------------------
  * SERVICE INFORMATION PARSER
