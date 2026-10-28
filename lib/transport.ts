@@ -166,10 +166,13 @@ function convertDataset(
           "Vehicle Number":
             bus["Vehicle Number"],
 
-          trip: schedule.trip,
+          trip:
+            schedule.trip,
 
-          stations: schedule.stations,
+          stations:
+            schedule.stations,
         },
+
         busIndex * 1000 + scheduleIndex
       );
 
@@ -188,21 +191,23 @@ function findDirectTrips(
   to: string
 ): TransportTrip[] {
   return trips.filter((trip) => {
-    const fromIndex = trip.stops.findIndex(
-      (stop) =>
-        stationMatches(
-          stop.stop.name,
-          from
-        )
-    );
+    const fromIndex =
+      trip.stops.findIndex(
+        (stop) =>
+          stationMatches(
+            stop.stop.name,
+            from
+          )
+      );
 
-    const toIndex = trip.stops.findIndex(
-      (stop) =>
-        stationMatches(
-          stop.stop.name,
-          to
-        )
-    );
+    const toIndex =
+      trip.stops.findIndex(
+        (stop) =>
+          stationMatches(
+            stop.stop.name,
+            to
+          )
+      );
 
     return (
       fromIndex !== -1 &&
@@ -234,7 +239,8 @@ async function fetchFromScheduleApi(
     );
   }
 
-  const data: unknown = await response.json();
+  const data: unknown =
+    await response.json();
 
   if (!Array.isArray(data)) {
     throw new Error(
@@ -264,6 +270,7 @@ async function fetchFromDataset(): Promise<
       headers: {
         Accept: "application/json",
       },
+
       next: {
         revalidate: 3600,
       },
@@ -282,6 +289,40 @@ async function fetchFromDataset(): Promise<
   return convertDataset(data);
 }
 
+/*
+ * Remove duplicate copies of the same
+ * vehicle + trip + route.
+ */
+function deduplicateTrips(
+  trips: TransportTrip[]
+): TransportTrip[] {
+  const seen = new Set<string>();
+
+  return trips.filter((trip) => {
+    const stopsKey = trip.stops
+      .map(
+        (stop) =>
+          `${normalizeName(
+            stop.stop.name
+          )}:${stop.departureTime ?? ""}`
+      )
+      .join("|");
+
+    const key =
+      `${trip.vehicleNumber ?? "unknown"}|` +
+      `${trip.serviceName ?? ""}|` +
+      stopsKey;
+
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+
+    return true;
+  });
+}
+
 export async function searchBuses(
   from: string,
   to: string
@@ -293,44 +334,91 @@ export async function searchBuses(
     resolveStopName(to);
 
   try {
-    let directTrips: TransportTrip[] =
-      [];
+    /*
+     * IMPORTANT:
+     *
+     * We now search BOTH:
+     *
+     * 1. Live/API schedule source
+     * 2. Complete Wayanad dataset
+     *
+     * The old code searched the dataset only
+     * when the API failed. That could make a
+     * search return only one bus.
+     */
 
-    try {
-      const apiTrips =
-        await fetchFromScheduleApi(
+    const [apiResult, datasetResult] =
+      await Promise.allSettled([
+        fetchFromScheduleApi(
           resolvedFrom,
           resolvedTo
-        );
+        ),
 
-      directTrips =
-        findDirectTrips(
-          apiTrips,
-          resolvedFrom,
-          resolvedTo
-        );
-    } catch (apiError) {
-      console.warn(
-        "Schedule API failed. Using Wayanad dataset.",
-        apiError
+        fetchFromDataset(),
+      ]);
+
+    let allTrips: TransportTrip[] = [];
+
+    /*
+     * Add API results.
+     */
+    if (
+      apiResult.status === "fulfilled"
+    ) {
+      allTrips.push(
+        ...apiResult.value
       );
-
-      const allTrips =
-        await fetchFromDataset();
-
-      directTrips =
-        findDirectTrips(
-          allTrips,
-          resolvedFrom,
-          resolvedTo
-        );
+    } else {
+      console.warn(
+        "Schedule API failed:",
+        apiResult.reason
+      );
     }
+
+    /*
+     * Add ALL Wayanad dataset trips.
+     */
+    if (
+      datasetResult.status === "fulfilled"
+    ) {
+      allTrips.push(
+        ...datasetResult.value
+      );
+    } else {
+      console.warn(
+        "Wayanad dataset failed:",
+        datasetResult.reason
+      );
+    }
+
+    /*
+     * Remove duplicate copies.
+     */
+    allTrips =
+      deduplicateTrips(allTrips);
+
+    /*
+     * Find EVERY bus that contains both
+     * requested stops in the correct order.
+     */
+    const directTrips =
+      findDirectTrips(
+        allTrips,
+        resolvedFrom,
+        resolvedTo
+      );
 
     console.log(
       `GECW Go search: ${resolvedFrom} -> ${resolvedTo}`,
-      `| direct trips: ${directTrips.length}`
+      `| all source trips: ${allTrips.length}`,
+      `| matching buses: ${directTrips.length}`
     );
 
+    /*
+     * createSearchResult already keeps every
+     * matching journey and sorts upcoming buses
+     * before departed buses.
+     */
     return createSearchResult(
       resolvedFrom,
       resolvedTo,
@@ -345,8 +433,11 @@ export async function searchBuses(
     return {
       from: resolvedFrom,
       to: resolvedTo,
+
       directJourneys: [],
+
       connectingJourneys: [],
+
       searchedAt:
         new Date().toISOString(),
     };
