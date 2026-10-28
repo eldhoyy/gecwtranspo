@@ -30,7 +30,7 @@ function stopMatches(
   );
 }
 
-function timeToMinutes(
+export function timeToMinutes(
   value: string | null | undefined
 ): number | null {
   if (!value) return null;
@@ -68,10 +68,6 @@ function timeToMinutes(
 
   /*
    * 12-hour format
-   * Examples:
-   * 2:30 pm
-   * 5:40 PM
-   * 02:30 PM
    */
   const twelveHour =
     text.match(
@@ -164,6 +160,12 @@ function createDirectJourney(
         stopMatches(stop, to)
     );
 
+  /*
+   * Direction is important.
+   *
+   * A bus must encounter FROM
+   * before TO.
+   */
   if (
     fromIndex === -1 ||
     toIndex === -1 ||
@@ -211,10 +213,9 @@ function createDirectJourney(
 
     /*
      * IMPORTANT:
-     * Do NOT remove past buses.
      *
-     * We keep them so the UI can show:
-     * DEPARTED
+     * Past buses are NOT removed.
+     * They remain visible as DEPARTED.
      */
     isPast =
       departureMinutes <
@@ -267,36 +268,44 @@ export function findDirectJourneys(
     )
     .sort((a, b) => {
       /*
-       * Upcoming buses first.
-       * Departed buses afterwards.
-       */
-      const aPast =
-        a.isPast ? 1 : 0;
-
-      const bPast =
-        b.isPast ? 1 : 0;
-
-      if (
-        aPast !== bPast
-      ) {
-        return (
-          aPast - bPast
-        );
-      }
-
-      /*
-       * Within each group,
-       * sort by departure time.
+       * IMPORTANT:
+       *
+       * Do NOT put upcoming buses
+       * before departed buses.
+       *
+       * Everything is sorted purely
+       * by departure time.
+       *
+       * Example:
+       *
+       * 06:00
+       * 06:30
+       * 07:00
+       * ...
+       * 13:05
+       * ...
        */
       const aTime =
-        a.waitingTimeMinutes ??
-        Number.MAX_SAFE_INTEGER;
+        timeToMinutes(
+          a.departureTime
+        );
 
       const bTime =
-        b.waitingTimeMinutes ??
-        Number.MAX_SAFE_INTEGER;
+        timeToMinutes(
+          b.departureTime
+        );
 
-      return aTime - bTime;
+      if (
+        aTime !== null &&
+        bTime !== null
+      ) {
+        return aTime - bTime;
+      }
+
+      if (aTime !== null) return -1;
+      if (bTime !== null) return 1;
+
+      return 0;
     });
 }
 
@@ -309,10 +318,6 @@ export function createSearchResult(
     from,
     to,
 
-    /*
-     * Every matching direct trip
-     * is retained.
-     */
     directJourneys:
       findDirectJourneys(
         trips,
