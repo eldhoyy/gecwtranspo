@@ -1677,8 +1677,7 @@ async function fetchFromMyBusYatra(
      * Don't request 40 pages one-by-one.
      * Fetch them concurrently in small batches.
      */
-    const limitedLinks =
-      links.slice(0, 40);
+    const limitedLinks = links;
 
     const batchSize = 8;
 
