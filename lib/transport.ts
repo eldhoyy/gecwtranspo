@@ -1109,7 +1109,7 @@ function createMyBusYatraTrip(
     mode: "bus",
 
     source:
-      "mybusyatra",
+  "private-bus-api",
 
     stops,
 
