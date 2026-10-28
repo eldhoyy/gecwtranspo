@@ -5,7 +5,10 @@ import type {
   TransportTrip,
 } from "@/lib/types";
 
-import { createSearchResult } from "./normalize";
+import {
+  createSearchResult,
+} from "./normalize";
+
 import {
   getStopNameVariants,
   resolveStopName,
@@ -44,7 +47,46 @@ const SCHEDULE_API_URL =
 const DATASET_URL =
   "https://raw.githubusercontent.com/amith-vp/Kerala-Private-Bus-Timing/main/wayanad.json";
 
-function normalizeName(value: string): string {
+const MYBUSYATRA_BASE_URL =
+  "https://www.mybusyatra.in";
+
+/*
+ * MyBusYatra uses "Thalappuzha"
+ * with double p in its URL.
+ */
+const MYBUS_SLUG_OVERRIDES:
+  Record<string, string> = {
+    THALAPUZHA: "thalappuzha",
+    MANANTHAVADY: "mananthavady",
+    KALPETTA: "kalpetta",
+    PANAMARAM: "panamaram",
+    KAMBALAKKAD: "kambalakkad",
+    PULPALLY: "pulpally",
+    MEENANGADI: "meenangadi",
+    SULTHAN_BATHERY: "sulthan-bathery",
+    "SULTHAN BATHERY": "sulthan-bathery",
+    VYTHIRI: "vythiri",
+    THIRUNELLY: "thirunelly",
+    THONDERNAD: "thondernad",
+    KANNUR: "kannur",
+    THALASSERY: "thalassery",
+    KOZHIKODE: "kozhikode",
+    CALICUT: "kozhikode",
+    VADAKARA: "vadakara",
+    MUKKAM: "mukkam",
+    PERAMBRA: "perambra",
+    NILAMBUR: "nilambur",
+    MANJERI: "manjeri",
+    MALAPPURAM: "malappuram",
+    MUVATTUPUZHA: "muvattupuzha",
+    PERUMBAVOOR: "perumbavoor",
+    ALUVA: "aluva",
+    ERNAKULAM: "ernakulam",
+  };
+
+function normalizeName(
+  value: string
+): string {
   return value
     .trim()
     .toLowerCase()
@@ -52,8 +94,10 @@ function normalizeName(value: string): string {
     .replace(/[.,]/g, "");
 }
 
-function makeStopId(name: string): string {
-  return `private-${normalizeName(name)
+function makeStopId(
+  name: string
+): string {
+  return `bus-${normalizeName(name)
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "")}`;
 }
@@ -62,52 +106,77 @@ function stationMatches(
   stationName: string,
   requestedName: string
 ): boolean {
-  const station = normalizeName(stationName);
+  const station =
+    normalizeName(stationName);
 
   const variants =
-    getStopNameVariants(requestedName);
-
-  return variants.some((variant) => {
-    const requested =
-      normalizeName(variant);
-
-    return (
-      station === requested ||
-      station.includes(requested) ||
-      requested.includes(station)
+    getStopNameVariants(
+      requestedName
     );
-  });
+
+  return variants.some(
+    (variant) => {
+      const requested =
+        normalizeName(
+          variant
+        );
+
+      return (
+        station === requested ||
+        station.includes(requested) ||
+        requested.includes(station)
+      );
+    }
+  );
 }
 
 function convertStations(
-  stations: ApiStation[] | undefined
+  stations:
+    | ApiStation[]
+    | undefined
 ): ScheduledStop[] {
-  if (!Array.isArray(stations)) {
+  if (
+    !Array.isArray(stations)
+  ) {
     return [];
   }
 
   return stations
-    .map((station, sequence) => {
-      const name = station.station?.trim();
+    .map(
+      (
+        station,
+        sequence
+      ) => {
+        const name =
+          station.station?.trim();
 
-      if (!name) {
-        return null;
+        if (!name) {
+          return null;
+        }
+
+        const stop:
+          TransportStop = {
+          id:
+            makeStopId(name),
+          name,
+        };
+
+        return {
+          stop,
+          sequence,
+          arrivalTime:
+            station.arrivalTime ??
+            null,
+          departureTime:
+            station.departureTime ??
+            null,
+        };
       }
-
-      const stop: TransportStop = {
-        id: makeStopId(name),
-        name,
-      };
-
-      return {
-        stop,
-        sequence,
-        arrivalTime: station.arrivalTime ?? null,
-        departureTime: station.departureTime ?? null,
-      };
-    })
+    )
     .filter(
-      (stop): stop is ScheduledStop =>
+      (
+        stop
+      ): stop is ScheduledStop =>
         stop !== null
     );
 }
@@ -116,7 +185,10 @@ function convertApiTrip(
   trip: ApiTrip,
   index: number
 ): TransportTrip | null {
-  const stops = convertStations(trip.stations);
+  const stops =
+    convertStations(
+      trip.stations
+    );
 
   if (stops.length < 2) {
     return null;
@@ -127,12 +199,17 @@ function convertApiTrip(
     trip["Vehicle Number"] ??
     undefined;
 
-  const tripNumber = trip.trip ?? index;
+  const tripNumber =
+    trip.trip ?? index;
 
   return {
-    id: `private-${vehicleNumber || "bus"}-${tripNumber}`
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-"),
+    id:
+      `private-${vehicleNumber || "bus"}-${tripNumber}`
+        .toLowerCase()
+        .replace(
+          /[^a-z0-9]+/g,
+          "-"
+        ),
 
     vehicleNumber,
 
@@ -141,91 +218,127 @@ function convertApiTrip(
         ? `Trip ${trip.trip}`
         : undefined,
 
-    operator: "Private Bus",
+    operator:
+      "Private Bus",
 
-    mode: "bus",
+    mode:
+      "bus",
 
-    source: "private-bus-api",
+    source:
+      "private-bus-api",
 
     stops,
 
-    isLive: false,
+    isLive:
+      false,
   };
 }
 
 function convertDataset(
   data: Dataset
 ): TransportTrip[] {
-  const buses = Array.isArray(data.busSchedules)
-    ? data.busSchedules
-    : [];
-
-  const trips: TransportTrip[] = [];
-
-  buses.forEach((bus, busIndex) => {
-    const schedules = Array.isArray(bus.schedule)
-      ? bus.schedule
+  const buses =
+    Array.isArray(
+      data.busSchedules
+    )
+      ? data.busSchedules
       : [];
 
-    schedules.forEach((schedule, scheduleIndex) => {
-      const trip = convertApiTrip(
-        {
-          vehicle_number:
-            bus.vehicle_number,
+  const trips:
+    TransportTrip[] = [];
 
-          "Vehicle Number":
-            bus["Vehicle Number"],
+  buses.forEach(
+    (
+      bus,
+      busIndex
+    ) => {
+      const schedules =
+        Array.isArray(
+          bus.schedule
+        )
+          ? bus.schedule
+          : [];
 
-          trip:
-            schedule.trip,
+      schedules.forEach(
+        (
+          schedule,
+          scheduleIndex
+        ) => {
+          const trip =
+            convertApiTrip(
+              {
+                vehicle_number:
+                  bus.vehicle_number,
 
-          stations:
-            schedule.stations,
-        },
+                "Vehicle Number":
+                  bus[
+                    "Vehicle Number"
+                  ],
 
-        busIndex * 1000 + scheduleIndex
+                trip:
+                  schedule.trip,
+
+                stations:
+                  schedule.stations,
+              },
+
+              busIndex * 1000 +
+                scheduleIndex
+            );
+
+          if (trip) {
+            trips.push(trip);
+          }
+        }
       );
-
-      if (trip) {
-        trips.push(trip);
-      }
-    });
-  });
+    }
+  );
 
   return trips;
 }
 
+/*
+ * Find direct trips in the correct direction.
+ */
 function findDirectTrips(
   trips: TransportTrip[],
   from: string,
   to: string
 ): TransportTrip[] {
-  return trips.filter((trip) => {
-    const fromIndex =
-      trip.stops.findIndex(
-        (stop) =>
-          stationMatches(
-            stop.stop.name,
-            from
-          )
-      );
+  return trips.filter(
+    (trip) => {
+      const fromIndex =
+        trip.stops.findIndex(
+          (stop) =>
+            stationMatches(
+              stop.stop.name,
+              from
+            )
+        );
 
-    const toIndex =
-      trip.stops.findIndex(
-        (stop) =>
-          stationMatches(
-            stop.stop.name,
-            to
-          )
-      );
+      const toIndex =
+        trip.stops.findIndex(
+          (stop) =>
+            stationMatches(
+              stop.stop.name,
+              to
+            )
+        );
 
-    return (
-      fromIndex !== -1 &&
-      toIndex !== -1 &&
-      fromIndex < toIndex
-    );
-  });
+      return (
+        fromIndex !== -1 &&
+        toIndex !== -1 &&
+        fromIndex < toIndex
+      );
+    }
+  );
 }
+
+/*
+ * ----------------------------------------------------
+ * PRIVATE BUS API
+ * ----------------------------------------------------
+ */
 
 async function fetchFromScheduleApi(
   from: string,
@@ -234,14 +347,19 @@ async function fetchFromScheduleApi(
   const url =
     `${SCHEDULE_API_URL}?departure=${encodeURIComponent(
       from
-    )}&destination=${encodeURIComponent(to)}`;
+    )}&destination=${encodeURIComponent(
+      to
+    )}`;
 
-  const response = await fetch(url, {
-    headers: {
-      Accept: "application/json",
-    },
-    cache: "no-store",
-  });
+  const response =
+    await fetch(url, {
+      headers: {
+        Accept:
+          "application/json",
+      },
+      cache:
+        "no-store",
+    });
 
   if (!response.ok) {
     throw new Error(
@@ -259,33 +377,47 @@ async function fetchFromScheduleApi(
   }
 
   return data
-    .map((item, index) =>
-      convertApiTrip(
-        item as ApiTrip,
+    .map(
+      (
+        item,
         index
-      )
+      ) =>
+        convertApiTrip(
+          item as ApiTrip,
+          index
+        )
     )
     .filter(
-      (trip): trip is TransportTrip =>
+      (
+        trip
+      ): trip is TransportTrip =>
         trip !== null
     );
 }
 
-async function fetchFromDataset(): Promise<
-  TransportTrip[]
-> {
-  const response = await fetch(
-    DATASET_URL,
-    {
-      headers: {
-        Accept: "application/json",
-      },
+/*
+ * ----------------------------------------------------
+ * PRIVATE WAYANAD DATASET
+ * ----------------------------------------------------
+ */
 
-      next: {
-        revalidate: 3600,
-      },
-    }
-  );
+async function fetchFromDataset():
+  Promise<TransportTrip[]> {
+  const response =
+    await fetch(
+      DATASET_URL,
+      {
+        headers: {
+          Accept:
+            "application/json",
+        },
+
+        next: {
+          revalidate:
+            3600,
+        },
+      }
+    );
 
   if (!response.ok) {
     throw new Error(
@@ -293,45 +425,497 @@ async function fetchFromDataset(): Promise<
     );
   }
 
-  const data: Dataset =
+  const data:
+    Dataset =
     await response.json();
 
-  return convertDataset(data);
+  return convertDataset(
+    data
+  );
 }
 
 /*
- * Remove duplicate copies of the same
- * vehicle + trip + route.
+ * ----------------------------------------------------
+ * MYBUSYATRA
+ * KSRTC + PRIVATE BUS
+ * ----------------------------------------------------
  */
+
+function myBusYatraSlug(
+  value: string
+): string {
+  const normalized =
+    resolveStopName(value)
+      .toUpperCase();
+
+  const override =
+    MYBUS_SLUG_OVERRIDES[
+      normalized
+    ];
+
+  if (override) {
+    return override;
+  }
+
+  return normalized
+    .toLowerCase()
+    .replace(
+      /[^a-z0-9]+/g,
+      "-"
+    )
+    .replace(
+      /^-|-$/g,
+      ""
+    );
+}
+
+function decodeHtml(
+  value: string
+): string {
+  return value
+    .replace(
+      /&nbsp;/gi,
+      " "
+    )
+    .replace(
+      /&amp;/gi,
+      "&"
+    )
+    .replace(
+      /&quot;/gi,
+      "\""
+    )
+    .replace(
+      /&#39;/gi,
+      "'"
+    )
+    .replace(
+      /&gt;/gi,
+      ">"
+    )
+    .replace(
+      /&lt;/gi,
+      "<"
+    );
+}
+
+function htmlToText(
+  html: string
+): string {
+  return decodeHtml(
+    html
+      .replace(
+        /<script[\s\S]*?<\/script>/gi,
+        "\n"
+      )
+      .replace(
+        /<style[\s\S]*?<\/style>/gi,
+        "\n"
+      )
+      .replace(
+        /<noscript[\s\S]*?<\/noscript>/gi,
+        "\n"
+      )
+      .replace(
+        /<\/(div|p|li|article|section|header|footer|h1|h2|h3|h4|h5|h6|br)>/gi,
+        "\n"
+      )
+      .replace(
+        /<[^>]+>/g,
+        " "
+      )
+  )
+    .replace(
+      /\r/g,
+      ""
+    )
+    .replace(
+      /[ \t]+/g,
+      " "
+    )
+    .replace(
+      /\n\s*\n+/g,
+      "\n"
+    );
+}
+
+function extractMyBusYatraRows(
+  html: string,
+  from: string,
+  to: string
+): TransportTrip[] {
+  const text =
+    htmlToText(html);
+
+  /*
+   * MyBusYatra timetable rows use:
+   *
+   * 06:30➔06:50
+   *
+   * We capture each row until the
+   * next timetable row.
+   */
+  const rowRegex =
+    /(\d{1,2}:\d{2})\s*[➔→]\s*(\d{1,2}:\d{2})([\s\S]*?)(?=\d{1,2}:\d{2}\s*[➔→]|\n##|\Z)/g;
+
+  const trips:
+    TransportTrip[] = [];
+
+  let match:
+    RegExpExecArray | null;
+
+  let index = 0;
+
+  while (
+    (match =
+      rowRegex.exec(text))
+  ) {
+    const departureTime =
+      match[1];
+
+    const arrivalTime =
+      match[2];
+
+    const row =
+      match[3]
+        .replace(
+          /\s+/g,
+          " "
+        )
+        .trim();
+
+    if (!row) {
+      continue;
+    }
+
+    const upper =
+      row.toUpperCase();
+
+    const isKsrtc =
+      upper.includes(
+        "KSRTC"
+      );
+
+    const isPrivate =
+      upper.includes(
+        "PRIVATE BUS"
+      );
+
+    /*
+     * Ignore other operators for now.
+     *
+     * GECW Go currently promises
+     * KSRTC + Private Bus.
+     */
+    if (
+      !isKsrtc &&
+      !isPrivate
+    ) {
+      continue;
+    }
+
+    let operator:
+      string;
+
+    let serviceName:
+      string;
+
+    if (isKsrtc) {
+      operator =
+        "KSRTC";
+
+      const ksrtcIndex =
+        upper.indexOf(
+          "KSRTC"
+        );
+
+      const beforeKsrtc =
+        row
+          .slice(
+            0,
+            ksrtcIndex
+          )
+          .trim();
+
+      /*
+       * Usually the service name
+       * starts with KSRTC itself.
+       */
+      serviceName =
+        beforeKsrtc ||
+        row
+          .slice(
+            0,
+            Math.min(
+              row.length,
+              80
+            )
+          )
+          .trim();
+
+      if (
+        !serviceName
+      ) {
+        serviceName =
+          "KSRTC Bus";
+      }
+    } else {
+      operator =
+        "Private Bus";
+
+      const privateIndex =
+        upper.indexOf(
+          "PRIVATE BUS"
+        );
+
+      serviceName =
+        row
+          .slice(
+            0,
+            privateIndex
+          )
+          .trim();
+
+      if (
+        !serviceName
+      ) {
+        serviceName =
+          "Private Bus";
+      }
+    }
+
+    /*
+     * Clean service labels.
+     */
+    serviceName =
+      serviceName
+        .replace(
+          /\s+/g,
+          " "
+        )
+        .trim();
+
+    /*
+     * Some KSRTC rows contain:
+     *
+     * KSRTC ORDINARY
+     * KSRTC (Mananthavady Depot)
+     *
+     * Keep the useful service type.
+     */
+    if (
+      isKsrtc &&
+      !serviceName
+        .toUpperCase()
+        .includes(
+          "KSRTC"
+        )
+    ) {
+      serviceName =
+        `KSRTC ${serviceName}`;
+    }
+
+    const fromStop:
+      TransportStop = {
+      id:
+        makeStopId(
+          from
+        ),
+      name:
+        resolveStopName(
+          from
+        ),
+    };
+
+    const toStop:
+      TransportStop = {
+      id:
+        makeStopId(
+          to
+        ),
+      name:
+        resolveStopName(
+          to
+        ),
+    };
+
+    trips.push({
+      id:
+        `mybusyatra-${operator}-${from}-${to}-${departureTime}-${arrivalTime}-${index}`
+          .toLowerCase()
+          .replace(
+            /[^a-z0-9]+/g,
+            "-"
+          ),
+
+      serviceName,
+
+      operator,
+
+      mode:
+        "bus",
+
+      source:
+        "public-transport-api",
+
+      stops: [
+        {
+          stop:
+            fromStop,
+
+          sequence: 0,
+
+          arrivalTime:
+            departureTime,
+
+          departureTime:
+            departureTime,
+        },
+
+        {
+          stop:
+            toStop,
+
+          sequence: 1,
+
+          arrivalTime:
+            arrivalTime,
+
+          departureTime:
+            arrivalTime,
+        },
+      ],
+
+      isLive:
+        false,
+    });
+
+    index += 1;
+  }
+
+  return trips;
+}
+
+async function fetchFromMyBusYatra(
+  from: string,
+  to: string
+): Promise<TransportTrip[]> {
+  const fromSlug =
+    myBusYatraSlug(
+      from
+    );
+
+  const toSlug =
+    myBusYatraSlug(
+      to
+    );
+
+  const url =
+    `${MYBUSYATRA_BASE_URL}/bus-timing-from-${fromSlug}-to-${toSlug}`;
+
+  const response =
+    await fetch(
+      url,
+      {
+        headers: {
+          Accept:
+            "text/html",
+          "User-Agent":
+            "GECW-Go/1.0",
+        },
+
+        /*
+         * Don't request the
+         * page on every search.
+         */
+        next: {
+          revalidate:
+            900,
+        },
+      }
+    );
+
+  if (!response.ok) {
+    throw new Error(
+      `MyBusYatra returned ${response.status}`
+    );
+  }
+
+  const html =
+    await response.text();
+
+  return extractMyBusYatraRows(
+    html,
+    from,
+    to
+  );
+}
+
+/*
+ * ----------------------------------------------------
+ * DEDUPLICATION
+ * ----------------------------------------------------
+ */
+
 function deduplicateTrips(
   trips: TransportTrip[]
 ): TransportTrip[] {
-  const seen = new Set<string>();
+  const seen =
+    new Set<string>();
 
-  return trips.filter((trip) => {
-    const stopsKey = trip.stops
-      .map(
-        (stop) =>
-          `${normalizeName(
-            stop.stop.name
-          )}:${stop.departureTime ?? ""}`
-      )
-      .join("|");
+  return trips.filter(
+    (trip) => {
+      const stopsKey =
+        trip.stops
+          .map(
+            (stop) =>
+              `${normalizeName(
+                stop.stop.name
+              )}:${stop.departureTime ?? ""}:${stop.arrivalTime ?? ""}`
+          )
+          .join("|");
 
-    const key =
-      `${trip.vehicleNumber ?? "unknown"}|` +
-      `${trip.serviceName ?? ""}|` +
-      stopsKey;
+      /*
+       * IMPORTANT:
+       *
+       * Operator is part of the key.
+       *
+       * Therefore:
+       *
+       * 06:00 KSRTC
+       * 06:00 Private
+       *
+       * are NEVER treated as duplicates.
+       */
+      const key =
+        [
+          trip.operator ??
+            "",
+          trip.vehicleNumber ??
+            "",
+          trip.serviceName ??
+            "",
+          stopsKey,
+        ].join("|");
 
-    if (seen.has(key)) {
-      return false;
+      if (
+        seen.has(key)
+      ) {
+        return false;
+      }
+
+      seen.add(key);
+
+      return true;
     }
-
-    seen.add(key);
-
-    return true;
-  });
+  );
 }
+
+/*
+ * ----------------------------------------------------
+ * MAIN SEARCH
+ * ----------------------------------------------------
+ */
 
 export async function searchBuses(
   from: string,
@@ -345,19 +929,18 @@ export async function searchBuses(
 
   try {
     /*
-     * IMPORTANT:
+     * Search all sources together.
      *
-     * We now search BOTH:
-     *
-     * 1. Live/API schedule source
-     * 2. Complete Wayanad dataset
-     *
-     * The old code searched the dataset only
-     * when the API failed. That could make a
-     * search return only one bus.
+     * 1. Existing private API
+     * 2. Wayanad private dataset
+     * 3. MyBusYatra
+     *    -> KSRTC + private
      */
-
-    const [apiResult, datasetResult] =
+    const [
+      apiResult,
+      datasetResult,
+      publicResult,
+    ] =
       await Promise.allSettled([
         fetchFromScheduleApi(
           resolvedFrom,
@@ -365,31 +948,33 @@ export async function searchBuses(
         ),
 
         fetchFromDataset(),
+
+        fetchFromMyBusYatra(
+          resolvedFrom,
+          resolvedTo
+        ),
       ]);
 
-    let allTrips: TransportTrip[] = [];
+    let allTrips:
+      TransportTrip[] = [];
 
-    /*
-     * Add API results.
-     */
     if (
-      apiResult.status === "fulfilled"
+      apiResult.status ===
+      "fulfilled"
     ) {
       allTrips.push(
         ...apiResult.value
       );
     } else {
       console.warn(
-        "Schedule API failed:",
+        "Private schedule API failed:",
         apiResult.reason
       );
     }
 
-    /*
-     * Add ALL Wayanad dataset trips.
-     */
     if (
-      datasetResult.status === "fulfilled"
+      datasetResult.status ===
+      "fulfilled"
     ) {
       allTrips.push(
         ...datasetResult.value
@@ -401,15 +986,33 @@ export async function searchBuses(
       );
     }
 
-    /*
-     * Remove duplicate copies.
-     */
-    allTrips =
-      deduplicateTrips(allTrips);
+    if (
+      publicResult.status ===
+      "fulfilled"
+    ) {
+      allTrips.push(
+        ...publicResult.value
+      );
+    } else {
+      console.warn(
+        "MyBusYatra source failed:",
+        publicResult.reason
+      );
+    }
 
     /*
-     * Find EVERY bus that contains both
-     * requested stops in the correct order.
+     * Remove genuine duplicates,
+     * but NEVER merge KSRTC and
+     * private services merely because
+     * they have the same time.
+     */
+    allTrips =
+      deduplicateTrips(
+        allTrips
+      );
+
+    /*
+     * Correct direction.
      */
     const directTrips =
       findDirectTrips(
@@ -420,15 +1023,10 @@ export async function searchBuses(
 
     console.log(
       `GECW Go search: ${resolvedFrom} -> ${resolvedTo}`,
-      `| all source trips: ${allTrips.length}`,
-      `| matching buses: ${directTrips.length}`
+      `| source trips: ${allTrips.length}`,
+      `| direct buses: ${directTrips.length}`
     );
 
-    /*
-     * createSearchResult already keeps every
-     * matching journey and sorts upcoming buses
-     * before departed buses.
-     */
     return createSearchResult(
       resolvedFrom,
       resolvedTo,
@@ -441,8 +1039,11 @@ export async function searchBuses(
     );
 
     return {
-      from: resolvedFrom,
-      to: resolvedTo,
+      from:
+        resolvedFrom,
+
+      to:
+        resolvedTo,
 
       directJourneys: [],
 
