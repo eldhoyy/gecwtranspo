@@ -212,10 +212,47 @@ function getBusType(bus: TransportTrip): "Private Bus" | "KSRTC" {
 function formatTime(value?: string | null) {
   if (!value) return "--:--";
 
+  const text = value.trim().toLowerCase();
+
+  // Already in 12-hour format
+  const twelveHourMatch = text.match(
+    /^(\d{1,2}):(\d{2})\s*(am|pm)$/
+  );
+
+  if (twelveHourMatch) {
+    let hour = Number(twelveHourMatch[1]);
+    const minute = twelveHourMatch[2];
+    const period = twelveHourMatch[3].toUpperCase();
+
+    return `${hour.toString().padStart(2, "0")}:${minute} ${period}`;
+  }
+
+  // Convert 24-hour format → 12-hour format
+  const twentyFourHourMatch = text.match(
+    /^(\d{1,2}):(\d{2})$/
+  );
+
+  if (twentyFourHourMatch) {
+    let hour = Number(twentyFourHourMatch[1]);
+    const minute = twentyFourHourMatch[2];
+
+    const period = hour >= 12 ? "PM" : "AM";
+
+    if (hour === 0) {
+      hour = 12;
+    } else if (hour > 12) {
+      hour -= 12;
+    }
+
+    return `${hour.toString().padStart(2, "0")}:${minute} ${period}`;
+  }
+
   return value
     .replace(/\s+/g, " ")
     .trim()
-    .replace(/\b(am|pm)\b/i, (match) => match.toUpperCase());
+    .replace(/\b(am|pm)\b/i, (match) =>
+      match.toUpperCase()
+    );
 }
 
 function getJourneyEndpoints(journey: Journey) {
