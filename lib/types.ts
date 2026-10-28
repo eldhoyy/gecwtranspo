@@ -6,6 +6,7 @@ export type TransportMode =
 
 export type TransportSource =
   | "private-bus-api"
+  | "ksrtc"
   | "public-transport-api"
   | "openstreetmap"
   | "manual"
