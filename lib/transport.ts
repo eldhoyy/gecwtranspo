@@ -319,21 +319,36 @@ function convertApiTrip(
    DATASET CONVERSION
    =========================================================
 
-   The published Wayanad dataset contains:
+   Dataset structure:
 
    busSchedules[]
       -> Vehicle Number
-      -> route[]
+      -> route[]                  // COMPLETE ORDERED ROUTE
       -> schedule[]
            -> trip
-           -> stations[]
+           -> stations[]          // REAL TIMED STOPS
 
-   We use the actual scheduled stations.
+   IMPORTANT:
 
-   We DO NOT create a trip merely because a user
-   searched for two stops.
+   route[] is the source of truth for the complete
+   ordered route.
 
-   We DO NOT invent missing stops.
+   schedule[].stations[] is used to attach timing
+   information wherever timing is available.
+
+   We NEVER create a route based on the user's
+   searched FROM/TO pair.
+
+   Example:
+
+   route:
+   A -> B -> C -> D -> E
+
+   Search:
+   B -> D
+
+   Result:
+   Same original bus, with B before D.
    ========================================================= */
 
 function convertDataset(
@@ -350,15 +365,37 @@ function convertDataset(
 
   data.busSchedules.forEach(
     (bus, busIndex) => {
-      if (
-        !Array.isArray(bus.schedule)
-      ) {
-        return;
-      }
+      /*
+       * -----------------------------------------------------
+       * Build a timing lookup from every scheduled trip.
+       *
+       * A bus can have multiple trips in one day.
+       * We keep the timing information separately so that
+       * the complete route is never lost.
+       * -----------------------------------------------------
+       */
 
-      bus.schedule.forEach(
+      const schedules = Array.isArray(
+        bus.schedule
+      )
+        ? bus.schedule
+        : [];
+
+      /*
+       * -----------------------------------------------------
+       * Convert every scheduled trip.
+       *
+       * If route[] exists, it becomes the complete ordered
+       * route.
+       *
+       * If route[] is unavailable, we fall back to the
+       * scheduled stations for that particular trip.
+       * -----------------------------------------------------
+       */
+
+      schedules.forEach(
         (schedule, scheduleIndex) => {
-          const stations =
+          const scheduledStations =
             Array.isArray(
               schedule.stations
             )
@@ -366,37 +403,288 @@ function convertDataset(
               : [];
 
           /*
-           * Only use genuine scheduled
-           * station data.
+           * Create a lookup of real timing data.
+           *
+           * Example:
+           *
+           * MANANTHAVADY -> 14:35
+           * PANAMARAM    -> 15:15
+           * KALPETTA     -> 15:55
            */
-          if (stations.length < 2) {
+
+          const timingMap =
+            new Map<
+              string,
+              {
+                arrivalTime:
+                  string | null;
+                departureTime:
+                  string | null;
+              }
+            >();
+
+          scheduledStations.forEach(
+            (station) => {
+              const stationName =
+                station.station?.trim();
+
+              if (!stationName) {
+                return;
+              }
+
+              timingMap.set(
+                normalizeName(
+                  stationName
+                ),
+                {
+                  arrivalTime:
+                    station.arrivalTime ??
+                    null,
+
+                  departureTime:
+                    station.departureTime ??
+                    null,
+                }
+              );
+            }
+          );
+
+          /*
+           * -------------------------------------------------
+           * Use the COMPLETE route whenever available.
+           * -------------------------------------------------
+           */
+
+          const completeRoute =
+            Array.isArray(bus.route) &&
+            bus.route.length > 0
+              ? bus.route
+              : scheduledStations.map(
+                  (station) =>
+                    station.station ??
+                    ""
+                );
+
+          /*
+           * Remove empty route names while preserving
+           * the original order.
+           */
+
+          const routeStops =
+            completeRoute
+              .map((name) =>
+                typeof name ===
+                "string"
+                  ? name.trim()
+                  : ""
+              )
+              .filter(Boolean);
+
+          if (
+            routeStops.length < 2
+          ) {
             return;
           }
 
-          const trip =
-            convertApiTrip(
-              {
-                vehicle_number:
-                  bus.vehicle_number,
+          /*
+           * -------------------------------------------------
+           * Convert the COMPLETE route into ScheduledStop[].
+           *
+           * Timing is attached only when the dataset
+           * actually provides it.
+           *
+           * We DO NOT invent missing times.
+           * -------------------------------------------------
+           */
 
-                "Vehicle Number":
-                  bus["Vehicle Number"],
+          const stops: ScheduledStop[] =
+            routeStops.map(
+              (
+                stationName,
+                sequence
+              ) => {
+                const timing =
+                  timingMap.get(
+                    normalizeName(
+                      stationName
+                    )
+                  );
 
-                trip:
-                  schedule.trip,
+                const stop: TransportStop =
+                  {
+                    id: makeStopId(
+                      stationName
+                    ),
 
-                stations,
-              },
+                    name: stationName,
+                  };
 
-              busIndex * 10000 +
-                scheduleIndex
+                return {
+                  stop,
+
+                  sequence,
+
+                  arrivalTime:
+                    timing?.arrivalTime ??
+                    null,
+
+                  departureTime:
+                    timing?.departureTime ??
+                    null,
+                };
+              }
             );
 
-          if (trip) {
-            trips.push(trip);
-          }
+          /*
+           * -------------------------------------------------
+           * Create the genuine bus trip.
+           * -------------------------------------------------
+           */
+
+          const vehicleNumber =
+            bus.vehicle_number?.trim() ||
+            bus[
+              "Vehicle Number"
+            ]?.trim() ||
+            undefined;
+
+          const tripNumber =
+            schedule.trip ??
+            scheduleIndex;
+
+          const idBase = [
+            vehicleNumber ??
+              `bus-${busIndex}`,
+
+            tripNumber,
+
+            stops
+              .map(
+                (item) =>
+                  normalizeName(
+                    item.stop.name
+                  )
+              )
+              .join("-"),
+          ].join("-");
+
+          trips.push({
+            id:
+              `private-${slugify(
+                idBase
+              )}`,
+
+            vehicleNumber,
+
+            serviceName:
+              schedule.trip !==
+              undefined
+                ? `Trip ${schedule.trip}`
+                : undefined,
+
+            operator:
+              "Private Bus",
+
+            mode: "bus",
+
+            source:
+              "private-bus-api",
+
+            stops,
+
+            isLive: false,
+          });
         }
       );
+
+      /*
+       * -----------------------------------------------------
+       * Some dataset entries may contain route[] but no
+       * schedule[].
+       *
+       * Preserve those genuine routes too.
+       *
+       * We DO NOT create fake timing information.
+       * -----------------------------------------------------
+       */
+
+      if (
+        schedules.length === 0 &&
+        Array.isArray(bus.route) &&
+        bus.route.length >= 2
+      ) {
+        const routeStops =
+          bus.route
+            .map((name) =>
+              typeof name ===
+              "string"
+                ? name.trim()
+                : ""
+            )
+            .filter(Boolean);
+
+        if (
+          routeStops.length >= 2
+        ) {
+          const stops: ScheduledStop[] =
+            routeStops.map(
+              (
+                stationName,
+                sequence
+              ) => ({
+                stop: {
+                  id:
+                    makeStopId(
+                      stationName
+                    ),
+
+                  name:
+                    stationName,
+                },
+
+                sequence,
+
+                arrivalTime:
+                  null,
+
+                departureTime:
+                  null,
+              })
+            );
+
+          const vehicleNumber =
+            bus.vehicle_number?.trim() ||
+            bus[
+              "Vehicle Number"
+            ]?.trim() ||
+            undefined;
+
+          trips.push({
+            id:
+              `private-${slugify(
+                vehicleNumber ??
+                  `bus-${busIndex}`
+              )}-route`,
+
+            vehicleNumber,
+
+            serviceName:
+              undefined,
+
+            operator:
+              "Private Bus",
+
+            mode: "bus",
+
+            source:
+              "private-bus-api",
+
+            stops,
+
+            isLive: false,
+          });
+        }
+      }
     }
   );
 
