@@ -6,7 +6,10 @@ import type {
 } from "@/lib/types";
 
 import { createSearchResult } from "./normalize";
-import { resolveStopName } from "./stops";
+import {
+  getStopNameVariants,
+  resolveStopName,
+} from "./stops";
 
 type ApiStation = {
   station?: string;
