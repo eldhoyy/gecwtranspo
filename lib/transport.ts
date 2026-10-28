@@ -3,16 +3,16 @@ import type {
   TransportSearchResult,
   TransportStop,
   TransportTrip,
+  Journey,
 } from "@/lib/types";
 
-import { createSearchResult } from "./normalize";
 import {
   getStopNameVariants,
   resolveStopName,
 } from "./stops";
 
 /* =========================================================
-   TYPES
+   SOURCE TYPES
    ========================================================= */
 
 type ApiStation = {
@@ -28,7 +28,7 @@ type ApiTrip = {
   stations?: ApiStation[];
 };
 
-type ApiBus = {
+type DatasetBus = {
   "Vehicle Number"?: string;
   vehicle_number?: string;
   route?: string[];
@@ -39,24 +39,11 @@ type ApiBus = {
 };
 
 type Dataset = {
-  busSchedules?: ApiBus[];
-};
-
-type MyBusYatraRouteStop = {
-  name: string;
-  arrival?: string;
-  departure?: string;
-};
-
-type MyBusYatraService = {
-  serviceName: string;
-  vehicleNumber?: string;
-  routeName?: string;
-  direction?: string;
+  busSchedules?: DatasetBus[];
 };
 
 /* =========================================================
-   SOURCES
+   SOURCE URLS
    ========================================================= */
 
 const SCHEDULE_API_URL =
@@ -72,7 +59,7 @@ const MYBUSYATRA_BASE_URL =
   "https://www.mybusyatra.in";
 
 /* =========================================================
-   MYBUSYATRA SLUGS
+   MYBUSYATRA STOP SLUGS
    ========================================================= */
 
 const MYBUS_SLUG_OVERRIDES: Record<string, string> = {
@@ -119,10 +106,14 @@ function normalizeName(value: string): string {
     .replace(/\s+/g, " ");
 }
 
-function makeStopId(name: string): string {
-  return `bus-${normalizeName(name)
+function slugify(value: string): string {
+  return normalizeName(value)
     .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")}`;
+    .replace(/^-+|-+$/g, "");
+}
+
+function makeStopId(name: string): string {
+  return `bus-${slugify(name)}`;
 }
 
 function stationMatches(
@@ -136,7 +127,8 @@ function stationMatches(
   );
 
   return variants.some((variant) => {
-    const requested = normalizeName(variant);
+    const requested =
+      normalizeName(variant);
 
     return (
       station === requested ||
@@ -146,10 +138,16 @@ function stationMatches(
   });
 }
 
+/* =========================================================
+   TIME HELPERS
+   ========================================================= */
+
 function timeToMinutes(
   value?: string | null
 ): number | null {
-  if (!value) return null;
+  if (!value) {
+    return null;
+  }
 
   const text = value
     .trim()
@@ -157,11 +155,16 @@ function timeToMinutes(
     .replace(/\s+/g, " ");
 
   const twentyFourHour =
-    text.match(/^(\d{1,2}):(\d{2})$/);
+    text.match(
+      /^(\d{1,2}):(\d{2})$/
+    );
 
   if (twentyFourHour) {
-    const hour = Number(twentyFourHour[1]);
-    const minute = Number(twentyFourHour[2]);
+    const hour =
+      Number(twentyFourHour[1]);
+
+    const minute =
+      Number(twentyFourHour[2]);
 
     if (
       hour >= 0 &&
@@ -178,33 +181,37 @@ function timeToMinutes(
       /^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/
     );
 
-  if (twelveHour) {
-    let hour = Number(twelveHour[1]);
-    const minute = Number(
-      twelveHour[2] ?? "0"
-    );
-
-    const period = twelveHour[3];
-
-    if (
-      hour >= 1 &&
-      hour <= 12 &&
-      minute >= 0 &&
-      minute <= 59
-    ) {
-      if (period === "am") {
-        if (hour === 12) {
-          hour = 0;
-        }
-      } else if (hour !== 12) {
-        hour += 12;
-      }
-
-      return hour * 60 + minute;
-    }
+  if (!twelveHour) {
+    return null;
   }
 
-  return null;
+  let hour =
+    Number(twelveHour[1]);
+
+  const minute =
+    Number(twelveHour[2] ?? "0");
+
+  const period =
+    twelveHour[3];
+
+  if (
+    hour < 1 ||
+    hour > 12 ||
+    minute < 0 ||
+    minute > 59
+  ) {
+    return null;
+  }
+
+  if (period === "am") {
+    if (hour === 12) {
+      hour = 0;
+    }
+  } else if (hour !== 12) {
+    hour += 12;
+  }
+
+  return hour * 60 + minute;
 }
 
 /* =========================================================
@@ -220,7 +227,8 @@ function convertStations(
 
   return stations
     .map((station, sequence) => {
-      const name = station.station?.trim();
+      const name =
+        station.station?.trim();
 
       if (!name) {
         return null;
@@ -241,22 +249,23 @@ function convertStations(
       };
     })
     .filter(
-      (stop): stop is ScheduledStop =>
-        stop !== null
+      (
+        item
+      ): item is ScheduledStop =>
+        item !== null
     );
 }
 
 /* =========================================================
-   CREATE PRIVATE BUS TRIP
+   API TRIP CONVERSION
    ========================================================= */
 
 function convertApiTrip(
   trip: ApiTrip,
   index: number
 ): TransportTrip | null {
-  const stops = convertStations(
-    trip.stations
-  );
+  const stops =
+    convertStations(trip.stations);
 
   if (stops.length < 2) {
     return null;
@@ -270,11 +279,22 @@ function convertApiTrip(
   const tripNumber =
     trip.trip ?? index;
 
+  const idBase =
+    [
+      vehicleNumber ?? "bus",
+      tripNumber,
+      stops
+        .map(
+          (item) =>
+            normalizeName(
+              item.stop.name
+            )
+        )
+        .join("-"),
+    ].join("-");
+
   return {
-    id:
-      `private-${vehicleNumber || "bus"}-${tripNumber}`
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-"),
+    id: `private-${slugify(idBase)}`,
 
     vehicleNumber,
 
@@ -296,31 +316,24 @@ function convertApiTrip(
 }
 
 /* =========================================================
-   WAYANAD DATASET
+   DATASET CONVERSION
    =========================================================
 
-   IMPORTANT:
+   The published Wayanad dataset contains:
 
-   The upstream dataset structure is:
+   busSchedules[]
+      -> Vehicle Number
+      -> route[]
+      -> schedule[]
+           -> trip
+           -> stations[]
 
-   {
-     busSchedules: [
-       {
-         "Vehicle Number": "...",
-         route: [...],
-         schedule: [
-           {
-             trip: 1,
-             stations: [...]
-           }
-         ]
-       }
-     ]
-   }
+   We use the actual scheduled stations.
 
-   We preserve the REAL ordered stations.
+   We DO NOT create a trip merely because a user
+   searched for two stops.
 
-   We never manufacture a searched FROM -> TO route.
+   We DO NOT invent missing stops.
    ========================================================= */
 
 function convertDataset(
@@ -337,12 +350,13 @@ function convertDataset(
 
   data.busSchedules.forEach(
     (bus, busIndex) => {
-      const schedules =
-        Array.isArray(bus.schedule)
-          ? bus.schedule
-          : [];
+      if (
+        !Array.isArray(bus.schedule)
+      ) {
+        return;
+      }
 
-      schedules.forEach(
+      bus.schedule.forEach(
         (schedule, scheduleIndex) => {
           const stations =
             Array.isArray(
@@ -352,113 +366,34 @@ function convertDataset(
               : [];
 
           /*
-           * Prefer the actual scheduled stations.
+           * Only use genuine scheduled
+           * station data.
            */
-          if (stations.length >= 2) {
-            const trip =
-              convertApiTrip(
-                {
-                  vehicle_number:
-                    bus.vehicle_number,
-                  "Vehicle Number":
-                    bus["Vehicle Number"],
-                  trip: schedule.trip,
-                  stations,
-                },
-                busIndex * 10000 +
-                  scheduleIndex
-              );
-
-            if (trip) {
-              trips.push(trip);
-            }
-
+          if (stations.length < 2) {
             return;
           }
 
-          /*
-           * IMPORTANT:
-           *
-           * If there are no scheduled station
-           * timings, we may use the published
-           * route itself.
-           *
-           * This is still a genuine route from
-           * the source. We do NOT invent stops.
-           *
-           * Times remain null.
-           */
-          if (
-            Array.isArray(bus.route) &&
-            bus.route.length >= 2
-          ) {
-            const routeStops: ScheduledStop[] =
-              bus.route
-                .map(
-                  (name, sequence) => {
-                    if (
-                      typeof name !==
-                        "string" ||
-                      !name.trim()
-                    ) {
-                      return null;
-                    }
+          const trip =
+            convertApiTrip(
+              {
+                vehicle_number:
+                  bus.vehicle_number,
 
-                    return {
-                      stop: {
-                        id:
-                          makeStopId(name),
-                        name: name.trim(),
-                      },
-                      sequence,
-                      arrivalTime: null,
-                      departureTime: null,
-                    };
-                  }
-                )
-                .filter(
-                  (
-                    stop
-                  ): stop is ScheduledStop =>
-                    stop !== null
-                );
+                "Vehicle Number":
+                  bus["Vehicle Number"],
 
-            if (
-              routeStops.length >= 2
-            ) {
-              trips.push({
-                id:
-                  `private-route-${bus["Vehicle Number"] || bus.vehicle_number || busIndex}-${schedule.trip ?? scheduleIndex}`
-                    .toLowerCase()
-                    .replace(
-                      /[^a-z0-9]+/g,
-                      "-"
-                    ),
+                trip:
+                  schedule.trip,
 
-                vehicleNumber:
-                  bus["Vehicle Number"] ||
-                  bus.vehicle_number ||
-                  undefined,
+                stations,
+              },
 
-                serviceName:
-                  schedule.trip !==
-                  undefined
-                    ? `Trip ${schedule.trip}`
-                    : undefined,
+              busIndex * 10000 +
+                scheduleIndex
+            );
 
-                operator:
-                  "Private Bus",
-
-                mode: "bus",
-
-                source:
-                  "private-bus-api",
-
-                stops: routeStops,
-
-                isLive: false,
-              });
-            }
+          if (trip) {
+            trips.push(trip);
           }
         }
       );
@@ -469,17 +404,12 @@ function convertDataset(
 }
 
 /* =========================================================
-   DIRECT ROUTE MATCHING
+   DIRECT TRIP MATCHING
    =========================================================
 
-   THIS IS THE MOST IMPORTANT PART.
+   This function checks the REAL ordered route.
 
-   A bus is returned only when BOTH requested
-   stops actually exist in its real ordered route.
-
-   Example:
-
-   REAL SOURCE ROUTE:
+   Example genuine route:
 
    MANANTHAVADY
    NALAM MILE
@@ -487,28 +417,22 @@ function convertDataset(
    KAMBALAKKAD
    KALPETTA
 
-   Search:
-
    MANANTHAVADY -> NALAM MILE
-
-   Result:
-   SAME REAL BUS.
-
-   Search:
+   = valid
 
    NALAM MILE -> PANAMARAM
+   = valid
 
-   Result:
-   SAME REAL BUS.
+   PANAMARAM -> KAMBALAKKAD
+   = valid
 
-   Search:
+   MANANTHAVADY -> KALPETTA
+   = valid
 
    KALPETTA -> MANANTHAVADY
+   = invalid
 
-   Result:
-   NOT returned, because the order is wrong.
-
-   No fake trips are created.
+   No searched-pair trip is created.
    ========================================================= */
 
 function findDirectTrips(
@@ -516,58 +440,310 @@ function findDirectTrips(
   from: string,
   to: string
 ): TransportTrip[] {
-  return trips.filter((trip) => {
-    if (
-      !Array.isArray(trip.stops) ||
-      trip.stops.length < 2
-    ) {
-      return false;
-    }
+  if (
+    !from.trim() ||
+    !to.trim()
+  ) {
+    return [];
+  }
 
-    const fromIndex =
-      trip.stops.findIndex((stop) =>
+  const fromName =
+    resolveStopName(from);
+
+  const toName =
+    resolveStopName(to);
+
+  if (
+    !fromName ||
+    !toName ||
+    normalizeName(fromName) ===
+      normalizeName(toName)
+  ) {
+    return [];
+  }
+
+  return trips.filter(
+    (trip) => {
+      if (
+        trip.mode !== "bus" ||
+        !Array.isArray(
+          trip.stops
+        ) ||
+        trip.stops.length < 2
+      ) {
+        return false;
+      }
+
+      const fromIndex =
+        trip.stops.findIndex(
+          (stop) =>
+            stationMatches(
+              stop.stop.name,
+              fromName
+            )
+        );
+
+      const toIndex =
+        trip.stops.findIndex(
+          (stop) =>
+            stationMatches(
+              stop.stop.name,
+              toName
+            )
+        );
+
+      return (
+        fromIndex >= 0 &&
+        toIndex >= 0 &&
+        fromIndex < toIndex
+      );
+    }
+  );
+}
+
+/* =========================================================
+   JOURNEY CONVERSION
+   ========================================================= */
+
+function tripToJourney(
+  trip: TransportTrip,
+  from: string,
+  to: string
+): Journey | null {
+  const fromIndex =
+    trip.stops.findIndex(
+      (stop) =>
         stationMatches(
           stop.stop.name,
           from
         )
-      );
+    );
 
-    const toIndex =
-      trip.stops.findIndex((stop) =>
+  const toIndex =
+    trip.stops.findIndex(
+      (stop) =>
         stationMatches(
           stop.stop.name,
           to
         )
-      );
-
-    return (
-      fromIndex !== -1 &&
-      toIndex !== -1 &&
-      fromIndex < toIndex
     );
-  });
+
+  if (
+    fromIndex < 0 ||
+    toIndex < 0 ||
+    fromIndex >= toIndex
+  ) {
+    return null;
+  }
+
+  const fromStop =
+    trip.stops[fromIndex];
+
+  const toStop =
+    trip.stops[toIndex];
+
+  const departureTime =
+    fromStop.departureTime ??
+    fromStop.arrivalTime ??
+    undefined;
+
+  const arrivalTime =
+    toStop.arrivalTime ??
+    toStop.departureTime ??
+    undefined;
+
+  const departureMinutes =
+    timeToMinutes(
+      departureTime
+    );
+
+  const arrivalMinutes =
+    timeToMinutes(
+      arrivalTime
+    );
+
+  let duration:
+    | number
+    | undefined;
+
+  if (
+    departureMinutes !== null &&
+    arrivalMinutes !== null
+  ) {
+    duration =
+      arrivalMinutes >=
+      departureMinutes
+        ? arrivalMinutes -
+          departureMinutes
+        : arrivalMinutes +
+          24 * 60 -
+          departureMinutes;
+  }
+
+  return {
+    segments: [
+      {
+        trip,
+        from: fromStop,
+        to: toStop,
+      },
+    ],
+
+    transfers: 0,
+
+    totalDurationMinutes:
+      duration,
+
+    waitingTimeMinutes: 0,
+
+    departureTime,
+
+    arrivalTime,
+
+    isLive:
+      trip.isLive ?? false,
+
+    isPast: false,
+  };
 }
 
 /* =========================================================
-   PRIVATE BUS SCHEDULE API
+   SCHEDULE API
+   =========================================================
+
+   Official endpoint:
+
+   /api/v1/schedules
+
+   Parameters:
+   departure
+   destination
+   restrict
+
+   The API may return a route containing
+   stations beyond the searched destination.
+   We preserve those stations.
    ========================================================= */
 
+async function fetchFromScheduleApi(
+  from: string,
+  to: string
+): Promise<TransportTrip[]> {
+  try {
+    const departure =
+      resolveStopName(from);
 
+    const destination =
+      resolveStopName(to);
+
+    if (
+      !departure ||
+      !destination
+    ) {
+      return [];
+    }
+
+    const params =
+      new URLSearchParams({
+        departure,
+        destination,
+        restrict: "false",
+      });
+
+    const response =
+      await fetch(
+        `${SCHEDULE_API_URL}?${params.toString()}`,
+        {
+          headers: {
+            Accept:
+              "application/json",
+          },
+
+          cache: "no-store",
+        }
+      );
+
+    if (!response.ok) {
+      console.warn(
+        "Schedule API status:",
+        response.status
+      );
+
+      return [];
+    }
+
+    const data: unknown =
+      await response.json();
+
+    const rawTrips: unknown[] =
+      Array.isArray(data)
+        ? data
+        : data &&
+            typeof data ===
+              "object" &&
+            "data" in data &&
+            Array.isArray(
+              (
+                data as {
+                  data?: unknown;
+                }
+              ).data
+            )
+          ? (
+              data as {
+                data: unknown[];
+              }
+            ).data
+          : data &&
+              typeof data ===
+                "object" &&
+              "schedules" in data &&
+              Array.isArray(
+                (
+                  data as {
+                    schedules?: unknown;
+                  }
+                ).schedules
+              )
+            ? (
+                data as {
+                  schedules: unknown[];
+                }
+              ).schedules
+            : [];
+
+    return rawTrips
+      .map(
+        (item, index) =>
+          convertApiTrip(
+            item as ApiTrip,
+            index
+          )
+      )
+      .filter(
+        (
+          trip
+        ): trip is TransportTrip =>
+          trip !== null
+      );
+  } catch (error) {
+    console.warn(
+      "Schedule API failed:",
+      error
+    );
+
+    return [];
+  }
+}
 
 /* =========================================================
    FULL ROUTE API
    =========================================================
 
-   The upstream API officially supports:
+   This endpoint is used only with a genuine
+   vehicle number obtained from the schedule API.
 
-   /api/v1/search?vehicle_number=...
-
-   which returns the bus's complete route.
-
-   We use this only for genuine vehicle numbers
-   already obtained from a genuine API result.
-
-   We NEVER manufacture a vehicle number.
+   It returns the full ordered route for that bus.
    ========================================================= */
 
 async function fetchFullRouteForVehicle(
@@ -577,19 +753,25 @@ async function fetchFullRouteForVehicle(
     return [];
   }
 
-  const url =
-    `${FULL_ROUTE_API_URL}?vehicle_number=${encodeURIComponent(
-      vehicleNumber
-    )}`;
-
   try {
-    const response =
-      await fetch(url, {
-        headers: {
-          Accept: "application/json",
-        },
-        cache: "no-store",
+    const params =
+      new URLSearchParams({
+        vehicle_number:
+          vehicleNumber,
       });
+
+    const response =
+      await fetch(
+        `${FULL_ROUTE_API_URL}?${params.toString()}`,
+        {
+          headers: {
+            Accept:
+              "application/json",
+          },
+
+          cache: "no-store",
+        }
+      );
 
     if (!response.ok) {
       return [];
@@ -598,28 +780,68 @@ async function fetchFullRouteForVehicle(
     const data: unknown =
       await response.json();
 
-    if (!Array.isArray(data)) {
-      return [];
-    }
+    const rawRoutes: unknown[] =
+      Array.isArray(data)
+        ? data
+        : data &&
+            typeof data ===
+              "object" &&
+            "data" in data &&
+            Array.isArray(
+              (
+                data as {
+                  data?: unknown;
+                }
+              ).data
+            )
+          ? (
+              data as {
+                data: unknown[];
+              }
+            ).data
+          : data &&
+              typeof data ===
+                "object" &&
+              "schedules" in data &&
+              Array.isArray(
+                (
+                  data as {
+                    schedules?: unknown;
+                  }
+                ).schedules
+              )
+            ? (
+                data as {
+                  schedules: unknown[];
+                }
+              ).schedules
+            : [];
 
-    return data
-      .map((item, index) => {
-        const route =
-          item as ApiTrip;
+    return rawRoutes
+      .map(
+        (item, index) =>
+          convertApiTrip(
+            {
+              vehicle_number:
+                vehicleNumber,
 
-        return convertApiTrip(
-          {
-            vehicle_number:
-              vehicleNumber,
-            "Vehicle Number":
-              vehicleNumber,
-            trip: route.trip,
-            stations:
-              route.stations,
-          },
-          index
-        );
-      })
+              "Vehicle Number":
+                vehicleNumber,
+
+              trip:
+                (
+                  item as ApiTrip
+                ).trip,
+
+              stations:
+                (
+                  item as ApiTrip
+                ).stations,
+            },
+
+            index
+          )
+      )
       .filter(
         (
           trip
@@ -628,7 +850,7 @@ async function fetchFullRouteForVehicle(
       );
   } catch (error) {
     console.warn(
-      "Full route lookup failed:",
+      "Full route API failed:",
       error
     );
 
@@ -640,21 +862,26 @@ async function fetchFullRouteForVehicle(
    DATASET FETCH
    ========================================================= */
 
-async function fetchFromDataset(): Promise<
+async function fetchDataset(): Promise<
   TransportTrip[]
 > {
   try {
     const response =
-      await fetch(DATASET_URL, {
-        headers: {
-          Accept: "application/json",
-        },
-        cache: "no-store",
-      });
+      await fetch(
+        DATASET_URL,
+        {
+          headers: {
+            Accept:
+              "application/json",
+          },
+
+          cache: "no-store",
+        }
+      );
 
     if (!response.ok) {
       console.warn(
-        "Wayanad dataset status:",
+        "Dataset status:",
         response.status
       );
 
@@ -667,7 +894,7 @@ async function fetchFromDataset(): Promise<
     return convertDataset(data);
   } catch (error) {
     console.warn(
-      "Wayanad dataset failed:",
+      "Dataset fetch failed:",
       error
     );
 
@@ -676,72 +903,90 @@ async function fetchFromDataset(): Promise<
 }
 
 /* =========================================================
-   HTML HELPERS
+   HTML / TEXT HELPERS
    ========================================================= */
 
 function decodeHtml(
   value: string
 ): string {
   return value
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'")
-    .replace(/&apos;/gi, "'")
-    .replace(/&gt;/gi, ">")
-    .replace(/&lt;/gi, "<");
-}
-
-function htmlToText(
-  html: string
-): string {
-  return decodeHtml(
-    html
-      .replace(
-        /<script[\s\S]*?<\/script>/gi,
-        "\n"
-      )
-      .replace(
-        /<style[\s\S]*?<\/style>/gi,
-        "\n"
-      )
-      .replace(
-        /<noscript[\s\S]*?<\/noscript>/gi,
-        "\n"
-      )
-      .replace(
-        /<\/(div|p|li|article|section|header|footer|h1|h2|h3|h4|h5|h6|br|main|nav|tr|td)>/gi,
-        "\n"
-      )
-      .replace(
-        /<[^>]+>/g,
-        " "
-      )
-  )
-    .replace(/\r/g, "")
-    .replace(/[ \t]+/g, " ")
     .replace(
-      /\n\s*\n+/g,
-      "\n"
+      /&nbsp;/gi,
+      " "
     )
-    .trim();
+    .replace(
+      /&amp;/gi,
+      "&"
+    )
+    .replace(
+      /&quot;/gi,
+      '"'
+    )
+    .replace(
+      /&#39;/gi,
+      "'"
+    )
+    .replace(
+      /&apos;/gi,
+      "'"
+    )
+    .replace(
+      /&gt;/gi,
+      ">"
+    )
+    .replace(
+      /&lt;/gi,
+      "<"
+    );
 }
 
 function htmlToLines(
   html: string
 ): string[] {
-  return htmlToText(html)
-    .split("\n")
+  const text =
+    decodeHtml(
+      html
+        .replace(
+          /<script[\s\S]*?<\/script>/gi,
+          "\n"
+        )
+        .replace(
+          /<style[\s\S]*?<\/style>/gi,
+          "\n"
+        )
+        .replace(
+          /<noscript[\s\S]*?<\/noscript>/gi,
+          "\n"
+        )
+        .replace(
+          /<br\s*\/?>/gi,
+          "\n"
+        )
+        .replace(
+          /<\/(div|p|li|article|section|header|footer|h1|h2|h3|h4|h5|h6|tr|td|th)>/gi,
+          "\n"
+        )
+        .replace(
+          /<[^>]+>/g,
+          " "
+        )
+    );
+
+  return text
+    .split(/\r?\n/)
     .map((line) =>
       line
-        .replace(/\s+/g, " ")
+        .replace(
+          /\s+/g,
+          " "
+        )
         .trim()
     )
     .filter(Boolean);
 }
 
 /* =========================================================
-   MYBUSYATRA URL HELPERS
+   MYBUSYATRA SLUG
    ========================================================= */
 
 function myBusYatraSlug(
@@ -762,16 +1007,9 @@ function myBusYatraSlug(
     return override;
   }
 
-  return normalized
-    .toLowerCase()
-    .replace(
-      /[^a-z0-9]+/g,
-      "-"
-    )
-    .replace(
-      /^-|-$/g,
-      ""
-    );
+  return slugify(
+    normalized
+  );
 }
 
 function myBusYatraTimetableUrl(
@@ -786,7 +1024,7 @@ function myBusYatraTimetableUrl(
 }
 
 /* =========================================================
-   MYBUSYATRA DETAIL LINKS
+   MYBUSYATRA DETAIL LINK EXTRACTION
    ========================================================= */
 
 function extractMyBusYatraDetailLinks(
@@ -801,11 +1039,18 @@ function extractMyBusYatraDetailLinks(
   let match:
     RegExpExecArray | null;
 
+  const base =
+    new URL(
+      MYBUSYATRA_BASE_URL
+    );
+
   while (
     (match = regex.exec(html))
   ) {
     const href =
-      decodeHtml(match[1]);
+      decodeHtml(
+        match[1]
+      );
 
     if (!href) {
       continue;
@@ -815,11 +1060,6 @@ function extractMyBusYatraDetailLinks(
       const url =
         new URL(
           href,
-          MYBUSYATRA_BASE_URL
-        );
-
-      const base =
-        new URL(
           MYBUSYATRA_BASE_URL
         );
 
@@ -838,524 +1078,179 @@ function extractMyBusYatraDetailLinks(
         continue;
       }
 
-      url.hash = "";
+                  url.hash = "";
 
       links.add(
         url.toString()
       );
     } catch {
-      // Ignore malformed URLs.
+      continue;
     }
   }
 
-  return Array.from(links);
+  return Array.from(
+    links
+  );
 }
 
 /* =========================================================
    MYBUSYATRA ROUTE PARSER
-   =========================================================
-
-   IMPORTANT:
-
-   This parser is used ONLY on an actual service
-   detail page.
-
-   It does NOT create FROM -> TO fake trips.
-
-   It attempts to recover the real ordered route
-   printed on the service page.
    ========================================================= */
-
-function extractMyBusYatraRoute(
-  html: string
-): MyBusYatraRouteStop[] {
-  const lines =
-    htmlToLines(html);
-
-  const route:
-    MyBusYatraRouteStop[] = [];
-
-  const timeRegex =
-    /\b(\d{1,2}:\d{2})(?:\s*(am|pm))?\b/i;
-
-  const ignored = new Set([
-    "bus timetable",
-    "bus timing",
-    "departure",
-    "arrival",
-    "duration",
-    "next bus",
-    "first departure",
-    "last bus",
-    "frequency",
-  ]);
-
-  function cleanStation(
-    value: string
-  ): string {
-    return value
-      .replace(
-        /\b\d{1,2}:\d{2}(?:\s*(?:am|pm))?\b/gi,
-        " "
-      )
-      .replace(
-        /[|•·]+/g,
-        " "
-      )
-      .replace(
-        /\s+/g,
-        " "
-      )
-      .trim();
-  }
-
-  function addStop(
-    name: string,
-    time?: string
-  ): void {
-    const cleaned =
-      cleanStation(name);
-
-    if (
-      !cleaned ||
-      cleaned.length < 2
-    ) {
-      return;
-    }
-
-    if (
-      ignored.has(
-        cleaned.toLowerCase()
-      )
-    ) {
-      return;
-    }
-
-    if (
-      /^(to|from|via|continues|bus|service|route)$/i.test(
-        cleaned
-      )
-    ) {
-      return;
-    }
-
-    /*
-     * Do not accept huge pieces of page text
-     * as a stop.
-     */
-    if (cleaned.length > 80) {
-      return;
-    }
-
-    const existingIndex =
-      route.findIndex(
-        (item) =>
-          normalizeName(
-            item.name
-          ) ===
-          normalizeName(
-            cleaned
-          )
-      );
-
-    if ( existingIndex >= 0
-    ) {
-      return;
-    }
-
-        route.push({
-      name: cleaned,
-      time,
-    });
-  }
-
-  return route;
-}
 
 function parseMyBusYatraRoute(
   html: string
 ): ScheduledStop[] {
-  const route: ScheduledStop[] = [];
+  const lines =
+    htmlToLines(html);
 
-  const text = decodeHtml(
-    html
-      .replace(/<script[\s\S]*?<\/script>/gi, " ")
-      .replace(/<style[\s\S]*?<\/style>/gi, " ")
-      .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/<\/(div|p|li|tr|td|th|h[1-6])>/gi, "\n")
-      .replace(/<[^>]+>/g, " ")
-  );
-
-  const lines = text
-    .split(/\r?\n/)
-    .map((line) =>
-      line
-        .replace(/\s+/g, " ")
-        .trim()
-    )
-    .filter(Boolean);
+  const result: ScheduledStop[] = [];
 
   const timePattern =
-    /\b([01]?\d|2[0-3]):[0-5]\d\s*(?:am|pm)?\b/i;
+    /\b(\d{1,2}:\d{2})(?:\s*(am|pm))?\b/i;
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+  const ignored = new Set([
+    "arrival",
+    "departure",
+    "time",
+    "schedule",
+    "route",
+    "station",
+    "duration",
+    "bus timing",
+    "bus timetable",
+  ]);
 
-    const timeMatch =
-      line.match(timePattern);
-
-    if (!timeMatch) continue;
-
-    const time = timeMatch[0];
-
-    const stationPart = line
-      .replace(time, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-
-    let stationName = stationPart;
-
-    if (!stationName && lines[i + 1]) {
-      stationName = lines[i + 1]
-        .replace(timePattern, "")
-        .replace(/\s+/g, " ")
-        .trim();
-    }
-
-    if (!stationName) continue;
-
+  function addStation(
+    name: string,
+    time: string
+  ): void {
     const cleaned =
-      normalizeName(stationName);
+      name
+        .replace(
+          /\b\d{1,2}:\d{2}(?:\s*(?:am|pm))?\b/gi,
+          " "
+        )
+        .replace(
+          /\s+/g,
+          " "
+        )
+        .trim();
 
     if (
       !cleaned ||
       cleaned.length < 2 ||
       cleaned.length > 80
     ) {
-      continue;
+      return;
+    }
+
+    const normalized =
+      normalizeName(cleaned);
+
+    if (
+      ignored.has(normalized)
+    ) {
+      return;
     }
 
     if (
-      /^(arrival|departure|time|schedule|route|station)$/i.test(
-        cleaned
+      /^(arrival|departure|time|schedule|route|station|bus|service)$/i.test(
+        normalized
       )
     ) {
-      continue;
+      return;
     }
 
-    const existingIndex =
-      route.findIndex(
+    const exists =
+      result.some(
         (item) =>
           normalizeName(
             item.stop.name
-          ) ===
-          normalizeName(
-            cleaned
-          )
+          ) === normalized
       );
 
-    if (
-      existingIndex >= 0
-    ) {
-      continue;
+    if (exists) {
+      return;
     }
 
-    route.push({
+    result.push({
       stop: {
         id:
-          `mybusyatra-stop-${route.length}-${slugify(cleaned)}`,
+          `mybusyatra-${slugify(
+            cleaned
+          )}`,
         name: cleaned,
       },
-      sequence: route.length,
+      sequence:
+        result.length,
       arrivalTime: time,
       departureTime: time,
     });
   }
 
-  return route;
-}
-
-function dedupeTrips(
-  trips: TransportTrip[]
-): TransportTrip[] {
-  const seen =
-    new Set<string>();
-
-  const result: TransportTrip[] = [];
-
-  for (const trip of trips) {
-    const routeKey =
-      trip.stops
-        .map(
-          (stop) =>
-            normalizeName(
-              stop.stop.name
-            )
-        )
-        .join("|");
-
-    const key = [
-      trip.operator ?? "",
-      trip.vehicleNumber ?? "",
-      trip.serviceName ?? "",
-      routeKey,
-    ].join("::");
-
-    if (seen.has(key)) {
-      continue;
-    }
-
-    seen.add(key);
-    result.push(trip);
-  }
-
-  return result;
-}
-
-async function fetchFromScheduleApi(
-  from: string,
-  to: string
-): Promise<TransportTrip[]> {
-  try {
-    const fromName =
-      resolveStopName(from);
-
-    const toName =
-      resolveStopName(to);
-
-    const params =
-      new URLSearchParams({
-        from: fromName,
-        to: toName,
-        restrict: "false",
-      });
-
-    const response =
-      await fetch(
-        `${SCHEDULE_API_URL}?${params.toString()}`,
-        {
-          cache: "no-store",
-        }
-      );
-
-    if (!response.ok) {
-      return [];
-    }
-
-    const data =
-      await response.json();
-
-    const rawTrips =
-      Array.isArray(data)
-        ? data
-        : Array.isArray(data?.data)
-          ? data.data
-          : Array.isArray(data?.schedules)
-            ? data.schedules
-            : [];
-
-    return rawTrips
-      .map(
-        (
-          item: any,
-          index: number
-        ) =>
-          convertApiTrip(
-            item,
-            `schedule-api-${index}`
-          )
-      )
-      .filter(
-        (
-          trip: TransportTrip | null
-        ): trip is TransportTrip =>
-          trip !== null
-      );
-  } catch {
-    return [];
-  }
-}
-
-async function fetchDataset(): Promise<TransportTrip[]> {
-  try {
-    const response =
-      await fetch(
-        DATASET_URL,
-        {
-          cache: "no-store",
-        }
-      );
-
-    if (!response.ok) {
-      return [];
-    }
-
-    const data =
-      await response.json();
-
-    return convertDataset(data);
-  } catch {
-    return [];
-  }
-}
-
-async function fetchFullRouteForVehicle(
-  vehicleNumber: string
-): Promise<ScheduledStop[]> {
-  try {
-    const params =
-      new URLSearchParams({
-        vehicle_number:
-          vehicleNumber,
-      });
-
-    const response =
-      await fetch(
-        `${FULL_ROUTE_API_URL}?${params.toString()}`,
-        {
-          cache: "no-store",
-        }
-      );
-
-    if (!response.ok) {
-      return [];
-    }
-
-    const data =
-      await response.json();
-
-    const rawTrips =
-      Array.isArray(data)
-        ? data
-        : Array.isArray(data?.data)
-          ? data.data
-          : Array.isArray(data?.schedules)
-            ? data.schedules
-            : [];
-
-    for (
-      const item of rawTrips
-    ) {
-      const stations =
-        item?.stations ??
-        item?.route ??
-        item?.stops;
-
-      if (
-        !Array.isArray(stations) ||
-        stations.length < 2
-      ) {
-        continue;
-      }
-
-      const converted =
-        convertStations(
-          stations
-        );
-
-      if (
-        converted.length >= 2
-      ) {
-        return converted;
-      }
-    }
-
-    return [];
-  } catch {
-    return [];
-  }
-}
-
-async function enrichWithFullRoutes(
-  trips: TransportTrip[]
-): Promise<TransportTrip[]> {
-  const result: TransportTrip[] = [];
-
   for (
-    const trip of trips
+    let i = 0;
+    i < lines.length;
+    i++
   ) {
-    if (
-      !trip.vehicleNumber ||
-      trip.stops.length >= 3
-    ) {
-      result.push(trip);
+    const line =
+      lines[i];
+
+    const timeMatch =
+      line.match(
+        timePattern
+      );
+
+    if (!timeMatch) {
       continue;
     }
 
-    const fullRoute =
-      await fetchFullRouteForVehicle(
-        trip.vehicleNumber
-      );
+    const time =
+      timeMatch[0];
+
+    const withoutTime =
+      line
+        .replace(
+          time,
+          " "
+        )
+        .replace(
+          /\s+/g,
+          " "
+        )
+        .trim();
 
     if (
-      fullRoute.length >= 2
+      withoutTime
     ) {
-      result.push({
-        ...trip,
-        stops: fullRoute,
-      });
-    } else {
-      result.push(trip);
+      addStation(
+        withoutTime,
+        time
+      );
+
+      continue;
+    }
+
+    const next =
+      lines[i + 1];
+
+    if (
+      next &&
+      !timePattern.test(next)
+    ) {
+      addStation(
+        next,
+        time
+      );
     }
   }
 
   return result;
 }
 
-function extractMyBusYatraDetailLinks(
-  html: string
-): string[] {
-  const links =
-    new Set<string>();
-
-  const regex =
-    /href\s*=\s*["']([^"']+)["']/gi;
-
-  let match:
-    RegExpExecArray | null;
-
-  while (
-    (match = regex.exec(html))
-  ) {
-    const href =
-      match[1];
-
-    if (!href) continue;
-
-    try {
-      const url =
-        new URL(
-          href,
-          MYBUSYATRA_BASE_URL
-        );
-
-      if (
-        url.hostname !==
-        new URL(
-          MYBUSYATRA_BASE_URL
-        ).hostname
-      ) {
-        continue;
-      }
-
-      if (
-        !url.pathname
-          .toLowerCase()
-          .includes("/bus/")
-      ) {
-        continue;
-      }
-
-      links.add(
-        url.toString()
-      );
-    } catch {
-      continue;
-    }
-  }
-
-  return Array.from(links);
-}
+/* =========================================================
+   MYBUSYATRA SERVICE DETAIL
+   ========================================================= */
 
 async function fetchMyBusYatraDetail(
   url: string
@@ -1365,6 +1260,10 @@ async function fetchMyBusYatraDetail(
       await fetch(
         url,
         {
+          headers: {
+            Accept:
+              "text/html",
+          },
           cache: "no-store",
         }
       );
@@ -1376,13 +1275,13 @@ async function fetchMyBusYatraDetail(
     const html =
       await response.text();
 
-    const route =
+    const stops =
       parseMyBusYatraRoute(
         html
       );
 
     if (
-      route.length < 2
+      stops.length < 2
     ) {
       return null;
     }
@@ -1394,7 +1293,8 @@ async function fetchMyBusYatraDetail(
 
     const vehicleNumber =
       vehicleMatch?.[1]
-        ?.trim();
+        ?.trim() ||
+      undefined;
 
     const titleMatch =
       html.match(
@@ -1413,6 +1313,13 @@ async function fetchMyBusYatraDetail(
             .trim()
         : undefined;
 
+    const operator =
+      serviceName
+        ?.toLowerCase()
+        .includes("ksrtc")
+        ? "KSRTC"
+        : "Private Bus";
+
     return {
       id:
         `mybusyatra-${slugify(
@@ -1420,50 +1327,55 @@ async function fetchMyBusYatraDetail(
             serviceName ??
             url
         )}`,
+
       vehicleNumber,
+
       serviceName,
-      operator:
-        serviceName
-          ?.toLowerCase()
-          .includes("ksrtc")
-          ? "KSRTC"
-          : "Private Bus",
+
+      operator,
+
       mode: "bus",
+
       source:
         "private-bus-api",
-      stops: route,
+
+      stops,
+
       isLive: false,
     };
-  } catch {
+  } catch (error) {
+    console.warn(
+      "MyBusYatra detail failed:",
+      error
+    );
+
     return null;
   }
 }
+
+/* =========================================================
+   MYBUSYATRA SEARCH
+   ========================================================= */
 
 async function fetchFromMyBusYatra(
   from: string,
   to: string
 ): Promise<TransportTrip[]> {
   try {
-    const fromSlug =
-      myBusYatraSlug(from);
-
-    const toSlug =
-      myBusYatraSlug(to);
-
-    if (
-      !fromSlug ||
-      !toSlug
-    ) {
-      return [];
-    }
-
     const timetableUrl =
-      `${MYBUSYATRA_BASE_URL}/bus-timings/${fromSlug}-to-${toSlug}`;
+      myBusYatraTimetableUrl(
+        from,
+        to
+      );
 
     const response =
       await fetch(
         timetableUrl,
         {
+          headers: {
+            Accept:
+              "text/html",
+          },
           cache: "no-store",
         }
       );
@@ -1480,11 +1392,25 @@ async function fetchFromMyBusYatra(
         html
       );
 
-    const trips: TransportTrip[] =
-      [];
+    if (
+      links.length === 0
+    ) {
+      return [];
+    }
+
+    const trips:
+      TransportTrip[] = [];
+
+    /*
+     * Limit external requests so a search
+     * does not request an excessive number
+     * of service pages.
+     */
+    const limitedLinks =
+      links.slice(0, 40);
 
     for (
-      const link of links
+      const link of limitedLinks
     ) {
       const trip =
         await fetchMyBusYatraDetail(
@@ -1495,6 +1421,11 @@ async function fetchFromMyBusYatra(
         continue;
       }
 
+      /*
+       * Only accept a service when BOTH
+       * requested stops are actually present
+       * in its real ordered route.
+       */
       const matches =
         findDirectTrips(
           [trip],
@@ -1510,15 +1441,198 @@ async function fetchFromMyBusYatra(
     }
 
     return trips;
-  } catch {
+  } catch (error) {
+    console.warn(
+      "MyBusYatra failed:",
+      error
+    );
+
     return [];
   }
 }
+
+/* =========================================================
+   DEDUPLICATION
+   ========================================================= */
+
+function dedupeTrips(
+  trips: TransportTrip[]
+): TransportTrip[] {
+  const seen =
+    new Set<string>();
+
+  const result:
+    TransportTrip[] = [];
+
+  for (
+    const trip of trips
+  ) {
+    if (
+      !trip.stops ||
+      trip.stops.length < 2
+    ) {
+      continue;
+    }
+
+    const routeKey =
+      trip.stops
+        .map(
+          (stop) =>
+            normalizeName(
+              stop.stop.name
+            )
+        )
+        .join("|");
+
+    const key = [
+      trip.operator ?? "",
+      trip.vehicleNumber ?? "",
+      trip.serviceName ?? "",
+      routeKey,
+    ].join("::");
+
+    if (
+      seen.has(key)
+    ) {
+      continue;
+    }
+
+    seen.add(key);
+    result.push(trip);
+  }
+
+  return result;
+}
+
+/* =========================================================
+   FULL ROUTE ENRICHMENT
+   ========================================================= */
+
+async function enrichWithFullRoutes(
+  trips: TransportTrip[]
+): Promise<TransportTrip[]> {
+  const result:
+    TransportTrip[] = [];
+
+  const cache =
+    new Map<
+      string,
+      TransportTrip[]
+    >();
+
+  for (
+    const trip of trips
+  ) {
+    const vehicle =
+      trip.vehicleNumber?.trim();
+
+    /*
+     * A route with 3+ real stops is already
+     * sufficiently detailed.
+     */
+    if (
+      !vehicle ||
+      trip.stops.length >= 3
+    ) {
+      result.push(trip);
+      continue;
+    }
+
+    const cacheKey =
+      vehicle
+        .toUpperCase()
+        .replace(
+          /\s+/g,
+          ""
+        );
+
+    let fullRoutes =
+      cache.get(cacheKey);
+
+    if (
+      !fullRoutes
+    ) {
+      fullRoutes =
+        await fetchFullRouteForVehicle(
+          vehicle
+        );
+
+      cache.set(
+        cacheKey,
+        fullRoutes
+      );
+    }
+
+    if (
+      fullRoutes.length === 0
+    ) {
+      result.push(trip);
+      continue;
+    }
+
+    const matchingRoute =
+      fullRoutes.find(
+        (route) =>
+          route.stops.length >= 2
+      );
+
+    if (!matchingRoute) {
+      result.push(trip);
+      continue;
+    }
+
+    result.push({
+      ...trip,
+
+      stops:
+        matchingRoute.stops,
+
+      serviceName:
+        trip.serviceName ??
+        matchingRoute.serviceName,
+
+      vehicleNumber:
+        trip.vehicleNumber ??
+        matchingRoute.vehicleNumber,
+    });
+  }
+
+  return result;
+}
+
+/* =========================================================
+   SEARCH
+   ========================================================= */
 
 export async function searchTransport(
   from: string,
   to: string
 ): Promise<TransportSearchResult> {
+  const fromName =
+    resolveStopName(from);
+
+  const toName =
+    resolveStopName(to);
+
+  if (
+    !fromName ||
+    !toName ||
+    normalizeName(fromName) ===
+      normalizeName(toName)
+  ) {
+    return {
+      from: fromName,
+      to: toName,
+      directJourneys: [],
+      connectingJourneys: [],
+      searchedAt:
+        new Date().toISOString(),
+    };
+  }
+
+  /*
+   * Fetch all genuine sources.
+   */
   const [
     datasetTrips,
     apiTrips,
@@ -1526,16 +1640,21 @@ export async function searchTransport(
   ] =
     await Promise.all([
       fetchDataset(),
+
       fetchFromScheduleApi(
-        from,
-        to
+        fromName,
+        toName
       ),
+
       fetchFromMyBusYatra(
-        from,
-        to
+        fromName,
+        toName
       ),
     ]);
 
+  /*
+   * Combine genuine trips only.
+   */
   let trips =
     dedupeTrips([
       ...datasetTrips,
@@ -1543,29 +1662,109 @@ export async function searchTransport(
       ...myBusTrips,
     ]);
 
+  /*
+   * Complete routes when the official
+   * full-route API can provide them.
+   */
   trips =
     await enrichWithFullRoutes(
       trips
     );
 
-  const directJourneys =
+  trips =
+    dedupeTrips(trips);
+
+  /*
+   * Final validation against the actual
+   * ordered route.
+   */
+  const directTrips =
     findDirectTrips(
       trips,
-      from,
-      to
+      fromName,
+      toName
     );
 
+  /*
+   * Convert genuine trips to journeys.
+   */
+  const directJourneys =
+    directTrips
+      .map(
+        (trip) =>
+          tripToJourney(
+            trip,
+            fromName,
+            toName
+          )
+      )
+      .filter(
+        (
+          journey
+        ): journey is Journey =>
+          journey !== null
+      );
+
+  /*
+   * Earlier departures first.
+   */
+  directJourneys.sort(
+    (a, b) => {
+      const aTime =
+        timeToMinutes(
+          a.departureTime
+        );
+
+      const bTime =
+        timeToMinutes(
+          b.departureTime
+        );
+
+      if (
+        aTime === null &&
+        bTime === null
+      ) {
+        return 0;
+      }
+
+      if (
+        aTime === null
+      ) {
+        return 1;
+      }
+
+      if (
+        bTime === null
+      ) {
+        return -1;
+      }
+
+      return aTime - bTime;
+    }
+  );
+
   return {
-    from:
-      resolveStopName(from),
-    to:
-      resolveStopName(to),
+    from: fromName,
+
+    to: toName,
+
     directJourneys,
+
+    /*
+     * Connecting journeys will be added
+     * later using the same genuine route
+     * data. No fake connections are created.
+     */
     connectingJourneys: [],
+
     searchedAt:
       new Date().toISOString(),
   };
 }
+
+/* =========================================================
+   COMPATIBILITY EXPORT
+   ========================================================= */
 
 export async function searchBuses(
   from: string,
@@ -1575,5 +1774,4 @@ export async function searchBuses(
     from,
     to
   );
-        }
-     
+}
