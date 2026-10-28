@@ -1015,8 +1015,7 @@ function extractMyBusYatraRoute(
           )
       );
 
-    if (      
-      existingIndex >= 0
+    if ( existingIndex >= 0
     ) {
       return;
     }
