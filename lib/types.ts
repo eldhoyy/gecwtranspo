@@ -8,6 +8,7 @@ export type TransportSource =
   | "private-bus-api"
   | "ksrtc"
   | "evidebus"
+  | "chalo"
   | "public-transport-api"
   | "openstreetmap"
   | "manual"
@@ -40,6 +41,7 @@ export type TransportTrip = {
   lastUpdated?: string;
   verifiedBy?: TransportSource[];
   verificationStatus?: "verified" | "single-source" | "timing-conflict";
+  chaloTrackingUrl?: string;
 };
 
 export type JourneySegment = {
