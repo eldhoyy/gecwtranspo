@@ -1,4 +1,5 @@
 import type { ScheduledStop, TransportTrip } from "../types";
+import { getStopNameVariants } from "../stops";
 
 const KSRTC_LIST_URL = "https://www.ksrtcedp.com/route/resultmapksrtc.php?placeid=63";
 const KSRTC_BASE_URL = "https://www.ksrtcedp.com";
@@ -10,6 +11,22 @@ function slugify(value: string): string { return normalize(value).replace(/[^a-z
 function decodeHtml(value: string): string { return value.replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&quot;/gi, '"').replace(/&#39;/gi, "'").replace(/&apos;/gi, "'").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code))); }
 function cleanHtmlText(html: string): string { return decodeHtml(html.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<br\s*\/?>/gi, "\n").replace(/<\/(td|th|tr|li|p|div|h[1-6])>/gi, "\n").replace(/<[^>]+>/g, " ")).replace(/\r/g, "").split("\n").map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean).join("\n"); }
 function normalizeTime(value: string): string | null { const match = value.match(/\b(\d{1,2}):(\d{2})\b/); if (!match) return null; const hour = Number(match[1]); const minute = Number(match[2]); return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59 ? `${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}` : null; }
+
+function equivalentStop(a: string, b: string): boolean {
+  const left = new Set(getStopNameVariants(a).map(normalize));
+  const right = new Set(getStopNameVariants(b).map(normalize));
+  if ([...left].some((x) => right.has(x))) return true;
+  const compact = (x: string) => x.replace(/[^a-z0-9]/g, "");
+  return [...left].some((x) => [...right].some((y) => compact(x) === compact(y)));
+}
+
+function matchesRequested(stopName: string, requested: string): boolean {
+  const actual = normalize(stopName);
+  return equivalentStop(stopName, requested) || getStopNameVariants(requested).some((v) => {
+    const r = normalize(v);
+    return actual === r || actual.includes(r) || r.includes(actual);
+  });
+}
 
 function extractDetailLinks(html: string): KsrtcDetailLink[] {
   const result: KsrtcDetailLink[] = [];
@@ -92,8 +109,6 @@ export async function fetchAllKsrtcTrips(): Promise<TransportTrip[]> {
     const links = extractDetailLinks(await response.text());
     if (!links.length) return [];
     const trips: TransportTrip[] = [];
-    // Parallel batches keep the first lookup fast without firing an uncontrolled
-    // request for every service at once.
     const batchSize = 24;
     for (let i = 0; i < links.length; i += batchSize) {
       const results = await Promise.all(links.slice(i, i + batchSize).map(fetchKsrtcDetail));
@@ -117,11 +132,10 @@ export async function getKsrtcTrips(from: string, to: string): Promise<Transport
 }
 
 function findKsrtcDirectTrips(trips: TransportTrip[], from: string, to: string): TransportTrip[] {
-  const fromName = normalize(from); const toName = normalize(to);
   return trips.filter((trip) => {
     if (!trip.stops || trip.stops.length < 2) return false;
-    const fromIndex = trip.stops.findIndex((stop) => { const n = normalize(stop.stop.name); return n === fromName || n.includes(fromName) || fromName.includes(n); });
-    const toIndex = trip.stops.findIndex((stop) => { const n = normalize(stop.stop.name); return n === toName || n.includes(toName) || toName.includes(n); });
+    const fromIndex = trip.stops.findIndex((stop) => matchesRequested(stop.stop.name, from));
+    const toIndex = trip.stops.findIndex((stop) => matchesRequested(stop.stop.name, to));
     return fromIndex >= 0 && toIndex >= 0 && fromIndex < toIndex;
   });
 }
