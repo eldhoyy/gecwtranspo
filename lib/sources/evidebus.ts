@@ -41,68 +41,98 @@ function makeStop(name: string, sequence: number, arrival: unknown, departure: u
   };
 }
 
-function walk(value: unknown, out: unknown[], seen = new Set<unknown>()) {
-  if (value === null || value === undefined || typeof value !== "object" || seen.has(value)) return;
-  seen.add(value);
-  if (Array.isArray(value)) {
-    for (const item of value) walk(item, out, seen);
-    return;
+function stripHtml(value: string): string {
+  return value
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&#39;/gi, "'")
+    .replace(/&quot;/gi, '"')
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function parseTableRows(html: string): { name: string; arrival: string | null; departure: string | null }[] {
+  const rows: { name: string; arrival: string | null; departure: string | null }[] = [];
+  const trMatches = html.match(/<tr\b[\s\S]*?<\/tr>/gi) ?? [];
+
+  for (const row of trMatches) {
+    const cells = (row.match(/<t[dh]\b[\s\S]*?<\/t[dh]>/gi) ?? []).map(stripHtml).filter(Boolean);
+    if (cells.length < 2) continue;
+
+    const times = cells.map(time).filter((v): v is string => Boolean(v));
+    if (!times.length) continue;
+
+    // Evidebus currently exposes stop-by-stop schedules as Stop Name + Time.
+    // If a future page exposes separate arrival/departure columns, retain both.
+    const nameCell = cells.find((cell) => !time(cell));
+    if (!nameCell) continue;
+
+    rows.push({
+      name: nameCell,
+      arrival: times[0] ?? null,
+      departure: times[1] ?? times[0] ?? null,
+    });
   }
-  const record = value as Record<string, unknown>;
-  const name = record.name ?? record.station ?? record.stop ?? record.stopName ?? record.place;
-  const departure = record.departure ?? record.departureTime ?? record.depTime ?? record.time;
-  const arrival = record.arrival ?? record.arrivalTime ?? record.arrTime;
-  if (typeof name === "string" && (time(departure) || time(arrival))) out.push(record);
-  for (const child of Object.values(record)) walk(child, out, seen);
+
+  return rows;
+}
+
+function parseTextSchedule(html: string): { name: string; arrival: string | null; departure: string | null }[] {
+  const text = stripHtml(html);
+  const rows: { name: string; arrival: string | null; departure: string | null }[] = [];
+  const pattern = /(?:^|\s)([A-Z][A-Z0-9 .'-]{2,80}?)(?:\s+)(\d{1,2}:\d{2}\s*(?:AM|PM)?)(?=\s|$)/gi;
+
+  for (const match of text.matchAll(pattern)) {
+    const name = match[1].trim();
+    const t = time(match[2]);
+    if (!t || /^(STOP ORDER|STOP NAME|ARRIVAL TIME|DEPARTURE|ROUTE)$/i.test(name)) continue;
+    rows.push({ name, arrival: t, departure: t });
+  }
+
+  return rows;
 }
 
 function parseRoutePage(html: string, from: string, to: string, requestedUrl: string): TransportTrip[] {
-  const jsonBlocks = [...html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)].map((m) => m[1]);
-  const candidates: unknown[] = [];
-  for (const block of jsonBlocks) {
-    try { candidates.push(JSON.parse(block)); } catch { /* ignore malformed JSON-LD */ }
-  }
+  const parsed = parseTableRows(html);
+  const rows = parsed.length >= 2 ? parsed : parseTextSchedule(html);
+  if (rows.length < 2) return [];
 
-  const rows: unknown[] = [];
-  for (const candidate of candidates) walk(candidate, rows);
-
-  const flat = rows.map((row) => {
-    const r = row as Record<string, unknown>;
-    return {
-      name: String(r.name ?? r.station ?? r.stop ?? r.stopName ?? "").trim(),
-      arrival: r.arrival ?? r.arrivalTime ?? r.arrTime,
-      departure: r.departure ?? r.departureTime ?? r.depTime ?? r.time,
-    };
-  }).filter((r) => r.name && (time(r.arrival) || time(r.departure)));
-
-  if (flat.length < 2) return [];
-
-  const unique: typeof flat = [];
-  for (const row of flat) {
-    if (!unique.some((x) => norm(x.name) === norm(row.name) && time(x.departure) === time(row.departure) && time(x.arrival) === time(row.arrival))) unique.push(row);
+  const unique: typeof rows = [];
+  for (const row of rows) {
+    if (!unique.some((x) => norm(x.name) === norm(row.name) && x.arrival === row.arrival && x.departure === row.departure)) {
+      unique.push(row);
+    }
   }
 
   const fi = unique.findIndex((x) => stopMatches(x.name, from));
   const ti = unique.findIndex((x) => stopMatches(x.name, to));
   if (fi < 0 || ti < 0 || fi >= ti) return [];
 
-  const relevant = unique.slice(0, unique.length);
-  const vehicle = flat.find((x) => /private|ksrtc|super fast|fast passenger/i.test(x.name))?.name;
+  const pageText = stripHtml(html);
+  const heading = pageText.match(/(?:KSRTC|Private)[^|]{0,120}/i)?.[0]?.trim();
+  const isKsrtc = /KSRTC/i.test(pageText) && !/Private Bus/i.test(heading || "");
+
   return [{
-    id: `evidebus-public-${slug(requestedUrl)}-${fi}-${ti}`,
-    serviceName: vehicle || "Evidebus service",
-    operator: /ksrtc/i.test(vehicle || "") ? "KSRTC" : "Private Bus",
+    id: `evidebus-${slug(requestedUrl)}`,
+    serviceName: heading || (isKsrtc ? "KSRTC service" : "Private Bus service"),
+    operator: isKsrtc ? "KSRTC" : "Private Bus",
     mode: "bus",
     source: "evidebus",
-    stops: relevant.map((x, i) => makeStop(x.name, i, x.arrival, x.departure)),
-    isLive: false,
+    stops: unique.map((x, i) => makeStop(x.name, i, x.arrival, x.departure)),
+    isLive: /live status|live tracking|live arrival/i.test(pageText),
     lastUpdated: new Date().toISOString(),
   }];
 }
 
 async function fetchPage(url: string, from: string, to: string): Promise<TransportTrip[]> {
   try {
-    const response = await fetch(url, { headers: { Accept: "text/html,application/xhtml+xml" }, next: { revalidate: 900 } });
+    const response = await fetch(url, {
+      headers: { Accept: "text/html,application/xhtml+xml" },
+      next: { revalidate: 900 },
+    });
     if (!response.ok) return [];
     return parseRoutePage(await response.text(), from, to, url);
   } catch {
@@ -113,12 +143,13 @@ async function fetchPage(url: string, from: string, to: string): Promise<Transpo
 function routeUrls(from: string, to: string): string[] {
   const f = slug(from);
   const t = slug(to);
-  const urls = [
+  // The /bus/ pages are indexed by Evidebus and contain complete stop-by-stop
+  // schedules. Search pages are kept as fallbacks because their URL structure
+  // can change independently of the individual bus pages.
+  return [
     `${BASE}/bus-timing-from-${f}-to-${t}`,
-    `${BASE}/buses/${f}-to-${t}`,
-    `${BASE}/search/${f}/${t}`,
+    `${BASE}/bus-timing-from-${f}-to-${t}`.replace(/-thalapuzha-/g, "-thalappuzha-"),
   ];
-  return Array.from(new Set(urls));
 }
 
 export async function getEvidebusTrips(from: string, to: string): Promise<TransportTrip[]> {
