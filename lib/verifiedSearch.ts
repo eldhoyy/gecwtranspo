@@ -34,10 +34,6 @@ function findTiming(stations: Station[], routeName: string): Station | undefined
   return stations.find((s) => s.station?.trim() && equivalentStopNames(s.station.trim(), routeName));
 }
 
-function hasCompleteTiming(stops: ScheduledStop[]): boolean {
-  return stops.length >= 2 && stops.every((stop) => Boolean(stop.arrivalTime && stop.departureTime));
-}
-
 function makeStop(name: string, sequence: number, timing?: Station): ScheduledStop {
   return { stop: { id: `private-${slug(name)}`, name }, sequence, arrivalTime: timing?.arrivalTime ?? null, departureTime: timing?.departureTime ?? null };
 }
@@ -52,10 +48,19 @@ function routeMatches(stops: ScheduledStop[], from: string, to: string): boolean
   return fi >= 0 && ti >= 0 && fi < ti;
 }
 
+function journeyHasTimes(t: TransportTrip, from: string, to: string): boolean {
+  const fi = t.stops.findIndex((s) => stopMatches(s.stop.name, from));
+  const ti = t.stops.findIndex((s) => stopMatches(s.stop.name, to));
+  if (fi < 0 || ti < 0 || fi >= ti) return false;
+  const fromStop = t.stops[fi];
+  const toStop = t.stops[ti];
+  return Boolean((fromStop.departureTime ?? fromStop.arrivalTime) && (toStop.arrivalTime ?? toStop.departureTime));
+}
+
 function apiTripToTransport(item: ApiTrip, index: number): TransportTrip | null {
   const raw = Array.isArray(item.stations) ? item.stations : [];
   const stops = raw.filter((s) => !!s.station?.trim()).map((s, i) => makeStop(s.station!.trim(), i, s));
-  if (!hasCompleteTiming(stops)) return null;
+  if (stops.length < 2) return null;
   const vehicle = item.vehicle_number?.trim() || item["Vehicle Number"]?.trim();
   return { id: `private-api-${slug(vehicle || "bus")}-${item.trip ?? index}`, vehicleNumber: vehicle, serviceName: item.trip !== undefined ? `Trip ${item.trip}` : "Private Bus", operator: "Private Bus", mode: "bus", source: "private-bus-api", stops, isLive: false };
 }
@@ -70,7 +75,6 @@ function datasetTrips(data: Dataset): TransportTrip[] {
       const names = route.length >= 2 ? route : scheduledStations.map((s) => s.station?.trim() || "").filter(Boolean);
       if (names.length < 2) continue;
       const stops = names.map((name, i) => makeStop(name, i, findTiming(scheduledStations, name)));
-      if (!hasCompleteTiming(stops)) continue;
       result.push({ id: `private-dataset-${slug(vehicle || `bus-${busIndex}`)}-${schedule.trip ?? tripIndex}`, vehicleNumber: vehicle, serviceName: schedule.trip !== undefined ? `Trip ${schedule.trip}` : "Private Bus", operator: "Private Bus", mode: "bus", source: "private-bus-api", stops, isLive: false });
     }
   }
@@ -89,8 +93,10 @@ function journey(t: TransportTrip, from: string, to: string): Journey | null {
   if (fi < 0 || ti < 0 || fi >= ti) return null;
   const a = t.stops[fi];
   const b = t.stops[ti];
-  if (!a.departureTime || !a.arrivalTime || !b.arrivalTime || !b.departureTime) return null;
-  return { segments: [{ trip: t, from: a, to: b }], transfers: 0, totalDurationMinutes: undefined, waitingTimeMinutes: 0, departureTime: a.departureTime, arrivalTime: b.arrivalTime, isLive: false, isPast: false };
+  const departureTime = a.departureTime ?? a.arrivalTime ?? undefined;
+  const arrivalTime = b.arrivalTime ?? b.departureTime ?? undefined;
+  if (!departureTime || !arrivalTime) return null;
+  return { segments: [{ trip: t, from: a, to: b }], transfers: 0, totalDurationMinutes: undefined, waitingTimeMinutes: 0, departureTime, arrivalTime, isLive: false, isPast: false };
 }
 
 async function privateTrips(from: string, to: string): Promise<TransportTrip[]> {
@@ -104,8 +110,8 @@ async function privateTrips(from: string, to: string): Promise<TransportTrip[]> 
     }),
   ]);
   const all: TransportTrip[] = [];
-  if (dataset.status === "fulfilled") all.push(...dataset.value.filter((t) => routeMatches(t.stops, from, to)));
-  if (api.status === "fulfilled") all.push(...api.value.filter((t) => routeMatches(t.stops, from, to)));
+  if (dataset.status === "fulfilled") all.push(...dataset.value.filter((t) => routeMatches(t.stops, from, to) && journeyHasTimes(t, from, to)));
+  if (api.status === "fulfilled") all.push(...api.value.filter((t) => routeMatches(t.stops, from, to) && journeyHasTimes(t, from, to)));
   const seen = new Set<string>();
   return all.filter((t) => { const k = tripKey(t); if (seen.has(k)) return false; seen.add(k); return true; });
 }
@@ -119,7 +125,7 @@ export async function searchVerifiedTransport(from: string, to: string): Promise
   ]);
   const trips: TransportTrip[] = [];
   if (privateResult.status === "fulfilled") trips.push(...privateResult.value);
-  if (ksrtcResult.status === "fulfilled") trips.push(...ksrtcResult.value.filter((t) => hasCompleteTiming(t.stops)));
+  if (ksrtcResult.status === "fulfilled") trips.push(...ksrtcResult.value.filter((t) => journeyHasTimes(t, resolvedFrom, resolvedTo)));
   const seen = new Set<string>();
   const directJourneys = trips
     .map((t) => journey(t, resolvedFrom, resolvedTo))
