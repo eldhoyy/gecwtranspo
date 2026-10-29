@@ -1,0 +1,9 @@
+{
+  "provider": "Chalo",
+  "coverage": ["Wayanad", "Kozhikode", "Kasaragod", "Kottayam"],
+  "liveTrackingUrl": "https://chalo.com/chalo-app/track-your-bus-live",
+  "wayanadUrl": "https://chalo.com/wayanad",
+  "integrationMode": "official-public-site-link",
+  "liveApiIntegrated": false,
+  "note": "Chalo provides live bus tracking and live arrival information on its public service. GECW GO must not claim direct live GPS/API integration until Chalo provides an authorized public feed/API."
+}
