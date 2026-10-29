@@ -4,6 +4,7 @@ import { getKsrtcTrips } from "./sources/ksrtc";
 
 const DATASET_URL = "https://raw.githubusercontent.com/amith-vp/Kerala-Private-Bus-Timing/main/wayanad.json";
 const SCHEDULE_API_URL = "https://busapi.amithv.xyz/api/v1/schedules";
+const MYBUSYATRA_BASE_URL = "https://www.mybusyatra.in";
 
 type Station = { station?: string; arrivalTime?: string | null; departureTime?: string | null };
 type Bus = { "Vehicle Number"?: string; vehicle_number?: string; route?: string[]; schedule?: { trip?: string | number; stations?: Station[] }[] };
@@ -12,20 +13,21 @@ type ApiTrip = { vehicle_number?: string; "Vehicle Number"?: string; trip?: stri
 
 function norm(v: string): string { return v.trim().toLowerCase().replace(/[.,/()\-–—]+/g, " ").replace(/\s+/g, " "); }
 function slug(v: string): string { return norm(v).replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, ""); }
+function decodeHtml(value: string): string { return value.replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&quot;/gi, '"').replace(/&#39;/gi, "'").replace(/&apos;/gi, "'").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code))); }
+function cleanHtmlText(html: string): string { return decodeHtml(html.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<br\s*\/?>/gi, "\n").replace(/<\/(td|th|tr|li|p|div|h[1-6])>/gi, "\n").replace(/<[^>]+>/g, " ")).replace(/\r/g, "").split("\n").map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean).join("\n"); }
+function normalizeTime(value: string): string | null { const match = value.match(/\b(\d{1,2}):(\d{2})\b/); if (!match) return null; const hour = Number(match[1]); const minute = Number(match[2]); return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59 ? `${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}` : null; }
 
 function equivalentStopNames(a: string, b: string): boolean {
   const left = new Set(getStopNameVariants(a).map(norm));
   const right = new Set(getStopNameVariants(b).map(norm));
   for (const value of left) if (right.has(value)) return true;
-  return false;
+  const compact = (x: string) => x.replace(/[^a-z0-9]/g, "");
+  return [...left].some((x) => [...right].some((y) => compact(x) === compact(y)));
 }
 
 function stopMatches(actual: string, requested: string): boolean {
   const a = norm(actual);
-  return getStopNameVariants(requested).some((v) => {
-    const r = norm(v);
-    return a === r || a.includes(r) || r.includes(a);
-  }) || equivalentStopNames(actual, requested);
+  return getStopNameVariants(requested).some((v) => { const r = norm(v); return a === r || a.includes(r) || r.includes(a); }) || equivalentStopNames(actual, requested);
 }
 
 function findTiming(stations: Station[], routeName: string): Station | undefined {
@@ -34,17 +36,11 @@ function findTiming(stations: Station[], routeName: string): Station | undefined
   return stations.find((s) => s.station?.trim() && equivalentStopNames(s.station.trim(), routeName));
 }
 
-function makeStop(name: string, sequence: number, timing?: Station): ScheduledStop {
-  return { stop: { id: `private-${slug(name)}`, name }, sequence, arrivalTime: timing?.arrivalTime ?? null, departureTime: timing?.departureTime ?? null };
-}
+function makeStop(name: string, sequence: number, timing?: Station): ScheduledStop { return { stop: { id: `private-${slug(name)}`, name }, sequence, arrivalTime: timing?.arrivalTime ?? null, departureTime: timing?.departureTime ?? null }; }
 
 function routeMatches(stops: ScheduledStop[], from: string, to: string): boolean {
-  let fi = -1;
-  let ti = -1;
-  for (let i = 0; i < stops.length; i++) {
-    if (fi < 0 && stopMatches(stops[i].stop.name, from)) fi = i;
-    if (ti < 0 && stopMatches(stops[i].stop.name, to)) ti = i;
-  }
+  const fi = stops.findIndex((s) => stopMatches(s.stop.name, from));
+  const ti = stops.findIndex((s) => stopMatches(s.stop.name, to));
   return fi >= 0 && ti >= 0 && fi < ti;
 }
 
@@ -82,9 +78,7 @@ function datasetTrips(data: Dataset): TransportTrip[] {
 }
 
 function tripKey(t: TransportTrip): string {
-  const first = t.stops[0];
-  const fromTime = first?.departureTime ?? first?.arrivalTime ?? "";
-  return [t.operator, t.vehicleNumber ?? "", fromTime, t.stops.map((s) => norm(s.stop.name)).join(">")].join("|").toLowerCase();
+  return [t.operator, t.vehicleNumber ?? "", t.serviceName ?? "", t.stops.map((s) => `${norm(s.stop.name)}:${s.departureTime ?? ""}:${s.arrivalTime ?? ""}`).join(">")].join("|").toLowerCase();
 }
 
 function journey(t: TransportTrip, from: string, to: string): Journey | null {
@@ -108,10 +102,7 @@ function sourceStopVariants(value: string): string[] {
     if (!normalized) continue;
     if (!result.some((existing) => norm(existing) === normalized)) result.push(candidate);
   }
-  // The published private-bus dataset/API uses both Thalapuzha and Thalappuzha.
-  if (/thalapuzha/i.test(value) || /thalappuzha/i.test(value) || result.some((x) => /thalapuzha|thalappuzha/i.test(x))) {
-    result.unshift("Thalapuzha", "Thalappuzha");
-  }
+  if (/thalapuzha|thalappuzha/i.test(value) || result.some((x) => /thalapuzha|thalappuzha/i.test(x))) result.unshift("Thalapuzha", "Thalappuzha");
   return Array.from(new Map(result.map((x) => [norm(x), x])).values()).slice(0, 4);
 }
 
@@ -123,18 +114,67 @@ async function fetchPrivateApi(departure: string, destination: string): Promise<
     const data = await response.json() as unknown;
     const rows = Array.isArray(data) ? data : data && typeof data === "object" && "data" in data && Array.isArray((data as { data?: unknown[] }).data) ? (data as { data: unknown[] }).data : data && typeof data === "object" && "schedules" in data && Array.isArray((data as { schedules?: unknown[] }).schedules) ? (data as { schedules: unknown[] }).schedules : [];
     return rows.map((x, i) => apiTripToTransport(x as ApiTrip, i)).filter((x): x is TransportTrip => !!x);
-  } catch {
-    return [];
+  } catch { return []; }
+}
+
+function myBusYatraSlug(value: string): string {
+  const n = norm(value);
+  const special: Record<string, string> = { thalapuzha: "thalappuzha", thalappuzha: "thalappuzha", mananthavady: "mananthavady", "mananthavady stand": "mananthavady-stand", sulthanbathery: "sulthan-bathery", "sulthan bathery": "sulthan-bathery" };
+  return special[n] || slug(n);
+}
+
+function myBusYatraRouteUrl(from: string, to: string): string {
+  return `${MYBUSYATRA_BASE_URL}/bus-timing-from-${myBusYatraSlug(from)}-to-${myBusYatraSlug(to)}`;
+}
+
+function parsePrivateRows(html: string, from: string, to: string): TransportTrip[] {
+  const text = cleanHtmlText(html);
+  const trips: TransportTrip[] = [];
+  const rowRegex = /(\d{1,2}:\d{2})\s*(?:➔|→|->|–|—|-)\s*(\d{1,2}:\d{2})([\s\S]{0,900}?)(?=(?:\d{1,2}:\d{2})\s*(?:➔|→|->|–|—|-)|$)/gi;
+  let match: RegExpExecArray | null;
+  while ((match = rowRegex.exec(text))) {
+    const departure = normalizeTime(match[1]);
+    const arrival = normalizeTime(match[2]);
+    const block = match[3].replace(/\s+/g, " ").trim();
+    if (!departure || !arrival || !/private\s+bus/i.test(block)) continue;
+    const name = block.match(/([^|]{0,180}?Private Bus)/i)?.[1]?.trim() || "Private Bus";
+    trips.push({
+      id: `private-published-${slug(`${from}-${to}-${departure}-${arrival}-${name}`)}`,
+      serviceName: name,
+      operator: "Private Bus",
+      mode: "bus",
+      source: "manual",
+      stops: [
+        { stop: { id: `private-${slug(from)}`, name: from }, sequence: 0, arrivalTime: null, departureTime: departure },
+        { stop: { id: `private-${slug(to)}`, name: to }, sequence: 1, arrivalTime: arrival, departureTime: arrival },
+      ],
+      isLive: false,
+      lastUpdated: new Date().toISOString(),
+    });
   }
+  return dedupeTrips(trips);
+}
+
+async function fetchPublishedPrivateFallback(from: string, to: string): Promise<TransportTrip[]> {
+  const urls = [myBusYatraRouteUrl(from, to)];
+  if (/^thalapuzha$/i.test(resolveStopName(from))) urls.push(myBusYatraRouteUrl("thalappuzha", to));
+  if (/^thalapuzha$/i.test(resolveStopName(to))) urls.push(myBusYatraRouteUrl(from, "thalappuzha"));
+  const all: TransportTrip[] = [];
+  for (const url of Array.from(new Set(urls))) {
+    try {
+      const response = await fetch(url, { headers: { Accept: "text/html" }, next: { revalidate: 1800 } });
+      if (!response.ok) continue;
+      all.push(...parsePrivateRows(await response.text(), from, to));
+    } catch { }
+  }
+  return dedupeTrips(all);
 }
 
 async function privateTrips(from: string, to: string): Promise<TransportTrip[]> {
   const fromQueries = sourceStopVariants(from);
   const toQueries = sourceStopVariants(to);
   const apiRequests: Promise<TransportTrip[]>[] = [];
-  for (const departure of fromQueries.slice(0, 2)) {
-    for (const destination of toQueries.slice(0, 2)) apiRequests.push(fetchPrivateApi(departure, destination));
-  }
+  for (const departure of fromQueries.slice(0, 2)) for (const destination of toQueries.slice(0, 2)) apiRequests.push(fetchPrivateApi(departure, destination));
 
   const [dataset, ...apiResults] = await Promise.all([
     fetch(DATASET_URL, { headers: { Accept: "application/json" }, next: { revalidate: 300 } }).then(async (r) => r.ok ? datasetTrips(await r.json() as Dataset) : []).catch(() => [] as TransportTrip[]),
@@ -144,32 +184,31 @@ async function privateTrips(from: string, to: string): Promise<TransportTrip[]> 
   const all: TransportTrip[] = [];
   all.push(...dataset.filter((t) => routeMatches(t.stops, from, to) && journeyHasTimes(t, from, to)));
   for (const apiTrips of apiResults) all.push(...apiTrips.filter((t) => routeMatches(t.stops, from, to) && journeyHasTimes(t, from, to)));
+  if (!all.length) all.push(...(await fetchPublishedPrivateFallback(from, to)));
 
   const seen = new Set<string>();
   return all.filter((t) => { const k = tripKey(t); if (seen.has(k)) return false; seen.add(k); return true; });
 }
 
+function dedupeTrips(trips: TransportTrip[]): TransportTrip[] {
+  const seen = new Set<string>();
+  return trips.filter((trip) => { const key = tripKey(trip); if (seen.has(key)) return false; seen.add(key); return true; });
+}
+
 export async function searchVerifiedTransport(from: string, to: string): Promise<TransportSearchResult> {
   const resolvedFrom = resolveStopName(from);
   const resolvedTo = resolveStopName(to);
-  const [privateResult, ksrtcResult] = await Promise.allSettled([
-    privateTrips(resolvedFrom, resolvedTo),
-    getKsrtcTrips(resolvedFrom, resolvedTo),
-  ]);
+  const [privateResult, ksrtcResult] = await Promise.allSettled([privateTrips(resolvedFrom, resolvedTo), getKsrtcTrips(resolvedFrom, resolvedTo)]);
   const trips: TransportTrip[] = [];
   if (privateResult.status === "fulfilled") trips.push(...privateResult.value);
   if (ksrtcResult.status === "fulfilled") trips.push(...ksrtcResult.value.filter((t) => journeyHasTimes(t, resolvedFrom, resolvedTo)));
   const seen = new Set<string>();
-  const directJourneys = trips
-    .map((t) => journey(t, resolvedFrom, resolvedTo))
-    .filter((j): j is Journey => !!j)
-    .filter((j) => {
-      const t = j.segments[0].trip;
-      const k = `${t.source}|${t.operator}|${t.vehicleNumber ?? ""}|${j.departureTime}|${j.arrivalTime}|${t.serviceName ?? ""}`.toLowerCase();
-      if (seen.has(k)) return false;
-      seen.add(k);
-      return true;
-    })
-    .sort((a, b) => (a.departureTime ?? "99:99").localeCompare(b.departureTime ?? "99:99"));
+  const directJourneys = trips.map((t) => journey(t, resolvedFrom, resolvedTo)).filter((j): j is Journey => !!j).filter((j) => {
+    const t = j.segments[0].trip;
+    const k = `${t.source}|${t.operator}|${t.vehicleNumber ?? ""}|${j.departureTime}|${j.arrivalTime}|${t.serviceName ?? ""}`.toLowerCase();
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  }).sort((a, b) => (a.departureTime ?? "99:99").localeCompare(b.departureTime ?? "99:99"));
   return { from: resolvedFrom, to: resolvedTo, directJourneys, connectingJourneys: [], searchedAt: new Date().toISOString() };
 }
