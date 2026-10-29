@@ -99,19 +99,52 @@ function journey(t: TransportTrip, from: string, to: string): Journey | null {
   return { segments: [{ trip: t, from: a, to: b }], transfers: 0, totalDurationMinutes: undefined, waitingTimeMinutes: 0, departureTime, arrivalTime, isLive: false, isPast: false };
 }
 
+function sourceStopVariants(value: string): string[] {
+  const variants = getStopNameVariants(value);
+  const preferred = [value, ...variants].filter(Boolean);
+  const result: string[] = [];
+  for (const candidate of preferred) {
+    const normalized = norm(candidate);
+    if (!normalized) continue;
+    if (!result.some((existing) => norm(existing) === normalized)) result.push(candidate);
+  }
+  // The published private-bus dataset/API uses both Thalapuzha and Thalappuzha.
+  if (/thalapuzha/i.test(value) || /thalappuzha/i.test(value) || result.some((x) => /thalapuzha|thalappuzha/i.test(x))) {
+    result.unshift("Thalapuzha", "Thalappuzha");
+  }
+  return Array.from(new Map(result.map((x) => [norm(x), x])).values()).slice(0, 4);
+}
+
+async function fetchPrivateApi(departure: string, destination: string): Promise<TransportTrip[]> {
+  try {
+    const url = `${SCHEDULE_API_URL}?${new URLSearchParams({ departure, destination, restrict: "false" })}`;
+    const response = await fetch(url, { headers: { Accept: "application/json" }, next: { revalidate: 60 } });
+    if (!response.ok) return [];
+    const data = await response.json() as unknown;
+    const rows = Array.isArray(data) ? data : data && typeof data === "object" && "data" in data && Array.isArray((data as { data?: unknown[] }).data) ? (data as { data: unknown[] }).data : data && typeof data === "object" && "schedules" in data && Array.isArray((data as { schedules?: unknown[] }).schedules) ? (data as { schedules: unknown[] }).schedules : [];
+    return rows.map((x, i) => apiTripToTransport(x as ApiTrip, i)).filter((x): x is TransportTrip => !!x);
+  } catch {
+    return [];
+  }
+}
+
 async function privateTrips(from: string, to: string): Promise<TransportTrip[]> {
-  const [dataset, api] = await Promise.allSettled([
-    fetch(DATASET_URL, { headers: { Accept: "application/json" }, next: { revalidate: 300 } }).then(async (r) => r.ok ? datasetTrips(await r.json() as Dataset) : []),
-    fetch(`${SCHEDULE_API_URL}?${new URLSearchParams({ departure: resolveStopName(from), destination: resolveStopName(to), restrict: "false" })}`, { headers: { Accept: "application/json" }, next: { revalidate: 60 } }).then(async (r) => {
-      if (!r.ok) return [] as TransportTrip[];
-      const data = await r.json() as unknown;
-      const rows = Array.isArray(data) ? data : data && typeof data === "object" && "data" in data && Array.isArray((data as { data?: unknown[] }).data) ? (data as { data: unknown[] }).data : data && typeof data === "object" && "schedules" in data && Array.isArray((data as { schedules?: unknown[] }).schedules) ? (data as { schedules: unknown[] }).schedules : [];
-      return rows.map((x, i) => apiTripToTransport(x as ApiTrip, i)).filter((x): x is TransportTrip => !!x);
-    }),
+  const fromQueries = sourceStopVariants(from);
+  const toQueries = sourceStopVariants(to);
+  const apiRequests: Promise<TransportTrip[]>[] = [];
+  for (const departure of fromQueries.slice(0, 2)) {
+    for (const destination of toQueries.slice(0, 2)) apiRequests.push(fetchPrivateApi(departure, destination));
+  }
+
+  const [dataset, ...apiResults] = await Promise.all([
+    fetch(DATASET_URL, { headers: { Accept: "application/json" }, next: { revalidate: 300 } }).then(async (r) => r.ok ? datasetTrips(await r.json() as Dataset) : []).catch(() => [] as TransportTrip[]),
+    ...apiRequests,
   ]);
+
   const all: TransportTrip[] = [];
-  if (dataset.status === "fulfilled") all.push(...dataset.value.filter((t) => routeMatches(t.stops, from, to) && journeyHasTimes(t, from, to)));
-  if (api.status === "fulfilled") all.push(...api.value.filter((t) => routeMatches(t.stops, from, to) && journeyHasTimes(t, from, to)));
+  all.push(...dataset.filter((t) => routeMatches(t.stops, from, to) && journeyHasTimes(t, from, to)));
+  for (const apiTrips of apiResults) all.push(...apiTrips.filter((t) => routeMatches(t.stops, from, to) && journeyHasTimes(t, from, to)));
+
   const seen = new Set<string>();
   return all.filter((t) => { const k = tripKey(t); if (seen.has(k)) return false; seen.add(k); return true; });
 }
