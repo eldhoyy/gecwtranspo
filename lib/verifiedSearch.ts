@@ -1,4 +1,4 @@
-import type { Journey, ScheduledStop, TransportSearchResult, TransportStop, TransportTrip } from "@/lib/types";
+import type { Journey, ScheduledStop, TransportSearchResult, TransportTrip } from "@/lib/types";
 import { getStopNameVariants, resolveStopName } from "./stops";
 import { searchPublicTransport } from "./sources/publicTransport";
 
@@ -12,13 +12,32 @@ type ApiTrip = { vehicle_number?: string; "Vehicle Number"?: string; trip?: stri
 
 function norm(v: string): string { return v.trim().toLowerCase().replace(/[.,/()\-–—]+/g, " ").replace(/\s+/g, " "); }
 function slug(v: string): string { return norm(v).replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, ""); }
+
+function equivalentStopNames(a: string, b: string): boolean {
+  const left = new Set(getStopNameVariants(a).map(norm));
+  const right = new Set(getStopNameVariants(b).map(norm));
+  for (const value of left) if (right.has(value)) return true;
+  return false;
+}
+
 function stopMatches(actual: string, requested: string): boolean {
   const a = norm(actual);
-  return getStopNameVariants(requested).some((v) => { const r = norm(v); return a === r || a.includes(r) || r.includes(a); });
+  return getStopNameVariants(requested).some((v) => {
+    const r = norm(v);
+    return a === r || a.includes(r) || r.includes(a);
+  }) || equivalentStopNames(actual, requested);
 }
+
+function findTiming(stations: Station[], routeName: string): Station | undefined {
+  const exact = stations.find((s) => s.station?.trim() && norm(s.station) === norm(routeName));
+  if (exact) return exact;
+  return stations.find((s) => s.station?.trim() && equivalentStopNames(s.station.trim(), routeName));
+}
+
 function makeStop(name: string, sequence: number, timing?: Station): ScheduledStop {
   return { stop: { id: `private-${slug(name)}`, name }, sequence, arrivalTime: timing?.arrivalTime ?? null, departureTime: timing?.departureTime ?? null };
 }
+
 function routeMatches(stops: ScheduledStop[], from: string, to: string): boolean {
   let fi = -1;
   let ti = -1;
@@ -28,6 +47,7 @@ function routeMatches(stops: ScheduledStop[], from: string, to: string): boolean
   }
   return fi >= 0 && ti >= 0 && fi < ti;
 }
+
 function apiTripToTransport(item: ApiTrip, index: number): TransportTrip | null {
   const raw = Array.isArray(item.stations) ? item.stations : [];
   const stops = raw.filter((s) => !!s.station?.trim()).map((s, i) => makeStop(s.station!.trim(), i, s));
@@ -35,27 +55,33 @@ function apiTripToTransport(item: ApiTrip, index: number): TransportTrip | null 
   const vehicle = item.vehicle_number?.trim() || item["Vehicle Number"]?.trim();
   return { id: `private-api-${slug(vehicle || "bus")}-${item.trip ?? index}`, vehicleNumber: vehicle, serviceName: item.trip !== undefined ? `Trip ${item.trip}` : "Private Bus", operator: "Private Bus", mode: "bus", source: "private-bus-api", stops, isLive: false };
 }
+
 function datasetTrips(data: Dataset): TransportTrip[] {
   const result: TransportTrip[] = [];
   for (const [busIndex, bus] of (data.busSchedules ?? []).entries()) {
     const vehicle = bus.vehicle_number?.trim() || bus["Vehicle Number"]?.trim();
     const route = (bus.route ?? []).map((x) => x.trim()).filter(Boolean);
     for (const [tripIndex, schedule] of (bus.schedule ?? []).entries()) {
-      const timing = new Map<string, Station>();
-      for (const s of schedule.stations ?? []) if (s.station?.trim()) timing.set(norm(s.station!), s);
-      const names = route.length >= 2 ? route : (schedule.stations ?? []).map((s) => s.station?.trim() || "").filter(Boolean);
+      const scheduledStations = schedule.stations ?? [];
+      const names = route.length >= 2 ? route : scheduledStations.map((s) => s.station?.trim() || "").filter(Boolean);
       if (names.length < 2) continue;
-      const stops = names.map((name, i) => makeStop(name, i, timing.get(norm(name))));
+
+      // Match timing records by verified stop aliases instead of requiring
+      // route[] and schedule[].stations[] to use identical spelling.
+      const stops = names.map((name, i) => makeStop(name, i, findTiming(scheduledStations, name)));
+
       result.push({ id: `private-dataset-${slug(vehicle || `bus-${busIndex}`)}-${schedule.trip ?? tripIndex}`, vehicleNumber: vehicle, serviceName: schedule.trip !== undefined ? `Trip ${schedule.trip}` : "Private Bus", operator: "Private Bus", mode: "bus", source: "private-bus-api", stops, isLive: false });
     }
   }
   return result;
 }
+
 function tripKey(t: TransportTrip): string {
   const first = t.stops[0];
   const fromTime = first?.departureTime ?? first?.arrivalTime ?? "";
   return [t.operator, t.vehicleNumber ?? "", fromTime, t.stops.map((s) => norm(s.stop.name)).join(">")].join("|").toLowerCase();
 }
+
 function journey(t: TransportTrip, from: string, to: string): Journey | null {
   const fi = t.stops.findIndex((s) => stopMatches(s.stop.name, from));
   const ti = t.stops.findIndex((s) => stopMatches(s.stop.name, to));
