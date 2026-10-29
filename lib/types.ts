@@ -38,6 +38,8 @@ export type TransportTrip = {
   stops: ScheduledStop[];
   isLive?: boolean;
   lastUpdated?: string;
+  verifiedBy?: TransportSource[];
+  verificationStatus?: "verified" | "single-source" | "timing-conflict";
 };
 
 export type JourneySegment = {
