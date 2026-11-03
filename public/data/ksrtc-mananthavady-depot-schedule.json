@@ -1,0 +1,40 @@
+{
+  "source": "Mananthavady KSRTC depot printed departure schedule",
+  "sourceType": "depot-sheet",
+  "lastReviewed": "2026-11-03",
+  "status": "reference-evidence",
+  "notes": [
+    "This sheet is a Mananthavady depot departure schedule, not a complete passing-stop timetable.",
+    "Departure times are stored as depot evidence only; they must not be treated as intermediate stop times unless independently verified.",
+    "Official KSRTC service-detail pages remain the route/pass-stop source for searchable journeys.",
+    "Evidebus live data can be used as a current verification signal where available."
+  ],
+  "outboundServices": {
+    "TRIVANDRUM": ["04:50", "08:00", "16:30", "19:00", "20:00", "21:00"],
+    "KOTTAYAM": ["09:15", "11:50", "19:45"],
+    "THODUPUZHA": ["07:15"],
+    "CHERTHALA": ["10:15"],
+    "PATHANAPURAM": ["12:35"],
+    "PATHANAMTHITTA": ["20:00"],
+    "IRINJALAKUDA": ["16:10"],
+    "PALA": ["18:00"],
+    "COIMBATORE": ["07:40"],
+    "OOTY": ["11:15"],
+    "PALAKKAD": ["08:00", "13:00"],
+    "NILAMBUR": ["14:45", "15:20"],
+    "KANNUR": ["06:30", "08:00", "09:40", "10:40", "11:20", "12:15", "13:20", "14:20", "15:10", "15:30", "16:50", "17:00"],
+    "THALASSERY": ["07:00", "09:20", "11:50", "12:50", "13:50", "14:50", "16:00", "17:10", "17:30"],
+    "MYSORE": ["07:30", "09:30", "11:30", "15:00"]
+  },
+  "confirmedCurrentEvidence": [
+    {
+      "operator": "KSRTC",
+      "serviceType": "Ordinary",
+      "route": ["MANANTHAVADY", "THALAPUZHA", "VALAD"],
+      "departureFromMananthavady": "11:40",
+      "scheduledThalapuzhaArrival": "12:00",
+      "evidence": ["Evidebus live result", "passenger ticket dated 2026-11-01"],
+      "confidence": "confirmed-current"
+    }
+  ]
+}
