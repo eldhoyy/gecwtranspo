@@ -2041,3 +2041,11 @@ html.dark-theme .welcome-card { box-shadow: 0 20px 44px rgba(0,0,0,.24); }
     transition-duration: .01ms !important;
   }
 }
+
+.search-intro {
+  margin: -12px 0 22px;
+  color: #8492a5;
+  font-size: 13px;
+  line-height: 1.6;
+}
+html.dark-theme .search-intro { color: #91a2ba; }
