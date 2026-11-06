@@ -2049,3 +2049,148 @@ html.dark-theme .welcome-card { box-shadow: 0 20px 44px rgba(0,0,0,.24); }
   line-height: 1.6;
 }
 html.dark-theme .search-intro { color: #91a2ba; }
+
+
+/* Editorial cleanup: restrained, product-led UI (anti-slop pass) */
+:root {
+  --go-ink: #172638;
+  --go-muted: #68788b;
+  --go-line: #dfe5ec;
+  --go-paper: #fff;
+  --go-canvas: #f5f6f8;
+  --go-primary: #1756a9;
+  --go-primary-dark: #124582;
+  --go-accent: #16856d;
+  --go-soft-blue: #edf3fa;
+  --go-shadow: 0 2px 8px rgba(19,35,54,.045);
+  --go-shadow-hover: 0 5px 16px rgba(19,35,54,.075);
+}
+html, body { background: #f5f6f8; }
+.transpo-page {
+  background: #f5f6f8;
+  padding-top: 22px;
+}
+.transpo-header-card, .transport-tabs-card, .content-card, .disclaimer-card {
+  background: #fff;
+  border: 1px solid #e1e6ec;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+.transpo-header-card { border-radius: 14px; padding: 17px 20px 13px; }
+.transpo-brand-mark {
+  border-radius: 11px;
+  background: #1756a9;
+  box-shadow: none;
+}
+.transpo-brand-text h1 { letter-spacing: .045em; font-size: 21px; }
+.transpo-brand-text p { letter-spacing: .035em; }
+.transport-tabs-card { border-radius: 12px; padding: 5px; }
+.transport-tab { border-radius: 8px; }
+.transport-tab.active {
+  background: #1756a9;
+  box-shadow: none;
+}
+.welcome-card {
+  min-height: 205px;
+  padding: 30px 34px;
+  border-radius: 15px;
+  background: #153d69;
+  box-shadow: none;
+}
+.welcome-small { color: #b9d5ec; letter-spacing: .11em; }
+.welcome-copy h2 { font-size: clamp(29px, 4vw, 38px); letter-spacing: -.025em; }
+.welcome-copy p { font-size: 15px; color: #d4e0ed; }
+.content-card { border-radius: 14px; padding: 22px; margin-top: 14px; }
+.quick-route-card {
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: none;
+  min-height: 68px;
+}
+.quick-route-card:hover {
+  transform: none;
+  box-shadow: 0 3px 10px rgba(19,35,54,.06);
+  border-color: #b9cce1;
+}
+.quick-route-icon { border-radius: 9px; background: #edf3fa; color: #1756a9; }
+.search-card-new > h3 { font-size: 19px; letter-spacing: -.015em; }
+.transpo-input-wrap {
+  height: 54px;
+  border-radius: 10px;
+  background: #fff;
+  border-color: #d9e0e8;
+  box-shadow: none;
+}
+.transpo-input-wrap:focus-within {
+  border-color: #6b91bd;
+  box-shadow: 0 0 0 2px rgba(23,86,169,.09);
+}
+.swap-button { border-radius: 10px; box-shadow: none; }
+.search-bus-button {
+  height: 52px;
+  border-radius: 10px;
+  background: #1756a9;
+  box-shadow: none;
+  font-weight: 650;
+}
+.search-bus-button:hover:not(:disabled) {
+  transform: none;
+  background: #124582;
+  box-shadow: none;
+  filter: none;
+}
+.results-card { padding: 22px; }
+.bus-result-new {
+  border-radius: 12px;
+  box-shadow: none;
+  padding: 17px;
+}
+.bus-result-new:hover {
+  transform: none;
+  box-shadow: 0 3px 12px rgba(19,35,54,.055);
+}
+.result-route { border-radius: 9px; background: #f6f8fa; }
+.result-route strong { font-size: 20px; }
+.status-badge, .operator-badge { border-radius: 5px; }
+.disclaimer-card { border-radius: 12px; }
+.login-button { border-radius: 8px; box-shadow: none; }
+.theme-toggle, .help-button { border-radius: 9px; }
+.location-suggestions { border-radius: 10px; box-shadow: 0 8px 20px rgba(19,35,54,.10); }
+.location-suggestion:hover { background: #f5f7fa; }
+button, a, input { -webkit-tap-highlight-color: transparent; }
+button:focus-visible, a:focus-visible, input:focus-visible {
+  outline: 2px solid #1756a9;
+  outline-offset: 2px;
+}
+::selection { background: #dce8f5; color: #172638; }
+
+html.dark-theme body, html.dark-theme { background: #101923; }
+html.dark-theme .transpo-page { background: #101923; }
+html.dark-theme .transpo-header-card,
+html.dark-theme .transport-tabs-card,
+html.dark-theme .content-card,
+html.dark-theme .disclaimer-card {
+  background: #172432;
+  border-color: #2a3948;
+  box-shadow: none;
+}
+html.dark-theme .welcome-card { background: #183c60; box-shadow: none; }
+html.dark-theme .quick-route-card,
+html.dark-theme .bus-result-new { background: #1a2a39; border-color: #304151; box-shadow: none; }
+html.dark-theme .quick-route-card:hover,
+html.dark-theme .bus-result-new:hover { border-color: #58738d; box-shadow: none; }
+html.dark-theme .transpo-input-wrap { background: #14212e; border-color: #344657; }
+html.dark-theme .transpo-input-wrap:focus-within { background: #182a3b; border-color: #7699bd; box-shadow: 0 0 0 2px rgba(118,153,189,.12); }
+html.dark-theme .result-route { background: #14212e; border-color: #2c3c4c; }
+html.dark-theme .transport-tab.active { background: #2866ad; box-shadow: none; }
+html.dark-theme .search-bus-button { background: #2866ad; box-shadow: none; }
+html.dark-theme .search-bus-button:hover:not(:disabled) { background: #3478c4; }
+html.dark-theme .welcome-card { color: #fff; }
+html.dark-theme .search-intro { color: #9aabbd; }
+
+@media (max-width: 650px) {
+  .transpo-page { padding: 10px 9px 30px; }
+  .welcome-card { min-height: 190px; padding: 23px 20px; }
+  .content-card, .results-card { padding: 17px; }
+  .search-card-new { padding: 19px; }
+}
