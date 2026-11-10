@@ -8,24 +8,6 @@ import { getEvidebusTrips } from "./sources/evidebus";
 const API="https://busapi.amithv.xyz/api/v1/schedules";
 // District files available in the upstream public dataset repository.
  // Load Wayanad plus only the district most relevant to the requested destination.
-const DATASETS = [
-  "wayanad",
-  "kannur",
-  "kozhikkode",
-  "kasaragod",
-  "malappuram",
-  "alappuzha",
-  "attingal",
-  "ernakulam",
-  "idukki",
-  "kottayam",
-  "muvattupuzha",
-  "palakkad-1",
-  "palakkad-2",
-  "pathanamthitta",
-  "vadakara",
-] as const;
-
 const DESTINATION_DATASETS: Record<string, readonly string[]> = {
   kannur: ["kannur"],
   thalassery: ["kannur"],
