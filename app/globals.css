@@ -2276,3 +2276,6 @@ html.dark-theme .result-route { background:#202d36; }
 .sources-list a,.sources-page header a,.offline-page a { color:var(--go-primary); font-weight:700; white-space:nowrap; }
 .offline-page section { max-width:620px; margin:12vh auto; padding:32px; border:1px solid var(--go-line); border-radius:14px; background:var(--go-paper); }
 @media(max-width:600px){.sources-list article{align-items:flex-start;flex-direction:column;gap:8px;}}
+
+.report-link { display:inline-flex; min-height:44px; align-items:center; margin-top:7px; color:var(--go-primary); font-size:12px; font-weight:700; text-decoration:underline; text-underline-offset:3px; }
+.sources-page .eyebrow,.offline-page .eyebrow { color:var(--go-primary); font-weight:800; letter-spacing:.14em; font-size:11px; }
