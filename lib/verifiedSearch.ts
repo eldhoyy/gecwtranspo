@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { Journey, ScheduledStop, TransportSearchResult, TransportTrip } from "@/lib/types";
 import { getStopNameVariants, resolveStopName } from "./stops";
 import { getKsrtcTrips } from "./sources/ksrtc";
@@ -100,8 +102,13 @@ async function fetchDatasets(from: string, to: string): Promise<TransportTrip[]>
         next: { revalidate: 900 },
         signal: AbortSignal.timeout(6000),
       });
-      if (!response.ok) return [];
-      return datasetTrips(await response.json() as Dataset, name);
+      if (response.ok) return datasetTrips(await response.json() as Dataset, name);
+    } catch {
+      // A cached snapshot is the fallback when the public source is unavailable.
+    }
+    try {
+      const snapshot = await readFile(join(process.cwd(), "public", "data", "snapshots", `${name}.json`), "utf8");
+      return datasetTrips(JSON.parse(snapshot) as Dataset, name);
     } catch {
       return [];
     }
