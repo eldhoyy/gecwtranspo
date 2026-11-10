@@ -2194,3 +2194,85 @@ html.dark-theme .search-intro { color: #9aabbd; }
   .content-card, .results-card { padding: 17px; }
   .search-card-new { padding: 19px; }
 }
+
+/* GECW Go product layout */
+:root {
+  --go-primary: #7d1d2b;
+  --go-primary-strong: #5f1420;
+  --go-ink: #202a33;
+  --go-muted: #68737d;
+  --go-canvas: #f5f3ef;
+  --go-paper: #fffefa;
+  --go-line: #e4dfd7;
+  --go-warm: #e6b66d;
+  --go-live: #13795b;
+  --go-private: #315b82;
+}
+body { font-family: var(--font-body), sans-serif; background: var(--go-canvas); color: var(--go-ink); }
+h1,h2,h3,h4,.transpo-brand-text { font-family: var(--font-display), sans-serif; }
+.transpo-page { background: var(--go-canvas); }
+.transpo-shell { width: min(1160px, calc(100% - 36px)); max-width: 1160px; margin: 0 auto; display: grid; grid-template-columns: minmax(0,.9fr) minmax(0,1.1fr); align-items: start; gap: 16px; }
+.transpo-header-card,.transport-tabs-card,.welcome-card,.disclaimer-card { grid-column: 1 / -1; }
+.transpo-header-card,.transport-tabs-card,.content-card,.disclaimer-card { background: var(--go-paper); border: 1px solid var(--go-line); box-shadow: 0 3px 14px rgba(42,34,25,.045); }
+.transpo-header-card { border-radius: 18px 18px 7px 7px; }
+.transport-tabs-card { border-radius: 9px; }
+.welcome-card { border-radius: 8px 20px 8px 20px; background: #67202a; position: relative; overflow: hidden; }
+.welcome-card::after { content:""; position:absolute; inset:0; pointer-events:none; opacity:.14; background-image: radial-gradient(#fff 0.65px,transparent .65px); background-size: 15px 15px; mask-image:linear-gradient(110deg,#000,transparent 72%); }
+.transpo-brand-mark { background: var(--go-primary); border-radius: 9px; box-shadow:none; }
+.transpo-brand-symbol { color:var(--go-warm); }
+.transport-tab.active { background:var(--go-primary); box-shadow:none; }
+.content-card { border-radius: 13px; }
+.quick-grid { display:grid; grid-template-columns:1fr; gap:9px; }
+.quick-route-card { border-radius:8px; border:1px solid var(--go-line); background:#fff; }
+.quick-route-icon { background:#f3ece7; color:var(--go-primary); border-radius:8px; }
+.search-card-new { grid-column:2; grid-row:4; border-radius:16px 7px 16px 7px; }
+.results-card { grid-column:2; }
+.transpo-shell > section:nth-of-type(3) { grid-column:1; grid-row:4 / span 2; }
+.transpo-shell > section:nth-of-type(4) { grid-column:2; grid-row:4; }
+.transpo-shell > section:nth-of-type(5) { grid-column:2; grid-row:5; }
+.disclaimer-card { grid-column:1/-1; }
+.transpo-input-wrap { min-height:54px; border-radius:9px; background:#fff; border:1px solid #d9d2c9; box-shadow:none; }
+.transpo-input-wrap:focus-within { border-color:var(--go-primary); box-shadow:0 0 0 3px rgba(125,29,43,.10); }
+.search-bus-button { min-height:52px; border-radius:9px; background:var(--go-primary); box-shadow:none; }
+.search-bus-button:hover:not(:disabled) { background:var(--go-primary-strong); box-shadow:none; transform:translateY(-1px); }
+.bus-result-new { border:1px solid var(--go-line); border-radius:12px; box-shadow:none; }
+.bus-result-new:hover { transform:translateY(-2px); box-shadow:0 8px 22px rgba(42,34,25,.08); }
+.result-route { border-radius:8px; background:#f6f3ee; }
+.result-route strong { font-variant-numeric:tabular-nums; }
+.operator-badge-ksrtc { background:#f8e7e9; color:#7d1d2b; }
+.operator-badge-private { background:#e9f0f6; color:#315b82; }
+.operator-badge-unknown { background:#efeee9; color:#4e5963; }
+.upcoming-dot { color:var(--go-live); }
+.theme-toggle,.help-button,.swap-button { min-width:44px; min-height:44px; }
+button,a,input { font:inherit; }
+button:focus-visible,a:focus-visible,input:focus-visible { outline:3px solid #b56a31; outline-offset:3px; }
+@media (max-width: 760px) {
+ .transpo-shell { width:min(100% - 20px,560px); display:flex; flex-direction:column; gap:12px; }
+ .transpo-shell > * { width:100%; }
+ .transpo-shell > section:nth-of-type(3),.transpo-shell > section:nth-of-type(4),.transpo-shell > section:nth-of-type(5) { grid-column:auto; grid-row:auto; }
+ .quick-grid { grid-template-columns:1fr; }
+}
+@media (prefers-color-scheme: dark) {
+ html:not(.light-theme) body { background:#111a22; color:#e8e5df; }
+ html:not(.light-theme) .transpo-header-card,html:not(.light-theme) .transport-tabs-card,html:not(.light-theme) .content-card,html:not(.light-theme) .disclaimer-card { background:#192630; border-color:#34434d; }
+ html:not(.light-theme) .quick-route-card,html:not(.light-theme) .transpo-input-wrap { background:#17232d; border-color:#3a4b57; color:#f2eee7; }
+ html:not(.light-theme) .result-route { background:#202d36; }
+}
+html.dark-theme body { background:#111a22; color:#e8e5df; }
+html.dark-theme .transpo-header-card,html.dark-theme .transport-tabs-card,html.dark-theme .content-card,html.dark-theme .disclaimer-card { background:#192630; border-color:#34434d; }
+html.dark-theme .quick-route-card,html.dark-theme .transpo-input-wrap { background:#17232d; border-color:#3a4b57; color:#f2eee7; }
+html.dark-theme .result-route { background:#202d36; }
+@media (prefers-reduced-motion: reduce) {
+ .gecw-travel-video { display:none !important; }
+ *,*::before,*::after { scroll-behavior:auto !important; animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; }
+}
+.sources-page,.offline-page { min-height:100vh; padding:clamp(24px,6vw,72px) max(20px,calc((100vw - 900px)/2)); background:var(--go-canvas); color:var(--go-ink); }
+.sources-page header { max-width:700px; margin-bottom:28px; }
+.sources-page h1,.offline-page h1 { font:600 clamp(32px,5vw,52px)/1.05 var(--font-display),sans-serif; letter-spacing:-.04em; }
+.sources-list { display:grid; gap:10px; }
+.sources-list article { display:flex; justify-content:space-between; gap:24px; align-items:center; padding:20px; background:var(--go-paper); border:1px solid var(--go-line); border-radius:10px; }
+.sources-list h2 { font:600 18px var(--font-display),sans-serif; margin:0 0 6px; }
+.sources-list p,.sources-list small { color:var(--go-muted); line-height:1.5; }
+.sources-list a,.sources-page header a,.offline-page a { color:var(--go-primary); font-weight:700; white-space:nowrap; }
+.offline-page section { max-width:620px; margin:12vh auto; padding:32px; border:1px solid var(--go-line); border-radius:14px; background:var(--go-paper); }
+@media(max-width:600px){.sources-list article{align-items:flex-start;flex-direction:column;gap:8px;}}
