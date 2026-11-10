@@ -4,7 +4,45 @@ import { getKsrtcTrips } from "./sources/ksrtc";
 import { getEvidebusTrips } from "./sources/evidebus";
 
 const API="https://busapi.amithv.xyz/api/v1/schedules";
-const DATASETS=["wayanad","kannur","kozhikkode","kasaragod","malappuram"];
+// District files available in the upstream public dataset repository.
+ // Load Wayanad plus only the district most relevant to the requested destination.
+const DATASETS = [
+  "wayanad",
+  "kannur",
+  "kozhikkode",
+  "kasaragod",
+  "malappuram",
+  "alappuzha",
+  "attingal",
+  "ernakulam",
+  "idukki",
+  "kottayam",
+  "muvattupuzha",
+  "palakkad-1",
+  "palakkad-2",
+  "pathanamthitta",
+  "vadakara",
+] as const;
+
+const DESTINATION_DATASETS: Record<string, readonly string[]> = {
+  kannur: ["kannur"],
+  thalassery: ["kannur"],
+  vadakara: ["vadakara", "kozhikkode"],
+  kozhikode: ["kozhikkode", "vadakara"],
+  calicut: ["kozhikkode", "vadakara"],
+  malappuram: ["malappuram"],
+  nilambur: ["malappuram"],
+  palakkad: ["palakkad-1", "palakkad-2"],
+  ernakulam: ["ernakulam", "muvattupuzha"],
+  kochi: ["ernakulam"],
+  aluva: ["ernakulam"],
+  muvattupuzha: ["muvattupuzha", "ernakulam"],
+  idukki: ["idukki"],
+  kottayam: ["kottayam"],
+  alappuzha: ["alappuzha"],
+  pathanamthitta: ["pathanamthitta"],
+  attingal: ["attingal"],
+};
 const BASE="https://raw.githubusercontent.com/amith-vp/Kerala-Private-Bus-Timing/main/";
 const CHALO="https://chalo.com/chalo-app/track-your-bus-live";
 type Station={station?:string;arrivalTime?:string|null;departureTime?:string|null};
@@ -21,8 +59,59 @@ function apiTrip(x:ApiTrip,i:number):TransportTrip|null{const ss=(x.stations??[]
 function datasetTrips(d:Dataset,label:string){const out:TransportTrip[]=[];(d.busSchedules??[]).forEach((b,bi)=>{const v=b.vehicle_number?.trim()||b["Vehicle Number"]?.trim(),route=(b.route??[]).map(x=>x.trim()).filter(Boolean);(b.schedule??[]).forEach((sch,si)=>{const ss=sch.stations??[],names=route.length>1?route:ss.map(s=>s.station?.trim()||"").filter(Boolean);if(names.length<2)return;out.push({id:`mvd-${label}-${slug(v||`bus-${bi}`)}-${sch.trip??si}`,vehicleNumber:v,serviceName:sch.trip!==undefined?`Trip ${sch.trip}`:"Private Bus",operator:"Private Bus",mode:"bus",source:"private-bus-api",stops:names.map((n,j)=>stop(n,j,ss.find(s=>norm(s.station??"")===norm(n)))),isLive:false});});});return out;}
 function dedupe(ts:TransportTrip[]){const seen=new Set<string>();return ts.filter(t=>{const k=`${t.vehicleNumber??""}|${t.serviceName??""}|${t.stops.map(s=>`${norm(s.stop.name)}:${s.departureTime??""}:${s.arrivalTime??""}`).join(">")}`;if(seen.has(k))return false;seen.add(k);return true;});}
 function journey(t:TransportTrip,f:string,to:string):Journey|null{const a=t.stops.findIndex(s=>match(s.stop.name,f)),b=t.stops.findIndex(s=>match(s.stop.name,to));if(a<0||b<0||a>=b)return null;const x=t.stops[a],y=t.stops[b],d=x.departureTime??x.arrivalTime,e=y.arrivalTime??y.departureTime;if(!d||!e)return null;const now=(()=>{const p=new Intl.DateTimeFormat("en-IN",{timeZone:"Asia/Kolkata",hour:"2-digit",minute:"2-digit",hour12:false}).formatToParts(new Date());return +(p.find(q=>q.type==="hour")?.value??0)*60+ +(p.find(q=>q.type==="minute")?.value??0);})();return{segments:[{trip:t,from:x,to:y}],transfers:0,waitingTimeMinutes:0,departureTime:d,arrivalTime:e,isLive:t.isLive,isPast:mins(d)<now};}
-async function fetchApi(f:string,to:string):Promise<TransportTrip[]>{try{const r=await fetch(`${API}?${new URLSearchParams({departure:f,destination:to,restrict:"false"})}`,{headers:{Accept:"application/json"},next:{revalidate:60}});if(!r.ok)return[];const d=await r.json() as any,rows=Array.isArray(d)?d:Array.isArray(d?.data)?d.data:Array.isArray(d?.schedules)?d.schedules:[];return rows.map(apiTrip).filter(Boolean) as TransportTrip[];}catch{return[];}}
-async function fetchDatasets(f:string,to:string){const out:TransportTrip[]=[];for(const name of DATASETS){try{const r=await fetch(`${BASE}${name}.json`,{headers:{Accept:"application/json"},next:{revalidate:900}});if(r.ok)out.push(...datasetTrips(await r.json() as Dataset,name));}catch{}}return out.filter(x=>valid(x,f,to));}
+async function fetchApi(f: string, to: string): Promise<TransportTrip[]> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 6000);
+  try {
+    const response = await fetch(
+      `${API}?${new URLSearchParams({ departure: f, destination: to, restrict: "false" })}`,
+      { headers: { Accept: "application/json" }, next: { revalidate: 60 }, signal: controller.signal },
+    );
+    if (!response.ok) return [];
+    const data = await response.json() as unknown;
+    const rows = Array.isArray(data)
+      ? data
+      : data && typeof data === "object" && "data" in data && Array.isArray(data.data)
+        ? data.data
+        : data && typeof data === "object" && "schedules" in data && Array.isArray(data.schedules)
+          ? data.schedules
+          : [];
+    return rows.map((row, index) => apiTrip(row as ApiTrip, index)).filter((trip): trip is TransportTrip => trip !== null);
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+function datasetsForDestination(destination: string): string[] {
+  const key = slug(destination).replace(/-/g, "");
+  const matched = Object.entries(DESTINATION_DATASETS)
+    .filter(([name]) => key.includes(name.replace(/-/g, "")) || name.replace(/-/g, "").includes(key))
+    .flatMap(([, datasets]) => [...datasets]);
+  return [...new Set(["wayanad", ...matched])];
+}
+
+async function fetchDatasets(from: string, to: string): Promise<TransportTrip[]> {
+  const selected = datasetsForDestination(to);
+  const results = await Promise.all(selected.map(async (name) => {
+    try {
+      const response = await fetch(`${BASE}${name}.json`, {
+        headers: { Accept: "application/json" },
+        next: { revalidate: 900 },
+        signal: AbortSignal.timeout(6000),
+      });
+      if (!response.ok) return [];
+      return datasetTrips(await response.json() as Dataset, name);
+    } catch {
+      return [];
+    }
+  }));
+  return results.flat().filter((trip) => valid(trip, from, to));
+}
 function variants(v:string){const a=[v,...getStopNameVariants(v)];if(/thalapuzha|thalappuzha/i.test(v))a.push("Thalapuzha","Thalappuzha");return [...new Map(a.map(x=>[norm(x),x])).values()].slice(0,4);}
 async function privateTrips(f:string,to:string){const req:Promise<TransportTrip[]>[]=[];for(const a of variants(f).slice(0,2))for(const b of variants(to).slice(0,2))req.push(fetchApi(a,b));const [mvd,...api]=await Promise.all([fetchDatasets(f,to),...req]);return dedupe([...mvd,...api.flat().filter(x=>valid(x,f,to))]);}
-export async function searchVerifiedTransport(from:string,to:string):Promise<TransportSearchResult>{const f=resolveStopName(from),t=resolveStopName(to);const [e,k,p]=await Promise.allSettled([getEvidebusTrips(f,t),getKsrtcTrips(f,t),privateTrips(f,t)]);const trips:TransportTrip[]=[];if(e.status==="fulfilled")trips.push(...e.value.filter(x=>valid(x,f,t)).map(x=>({...x,chaloTrackingUrl:CHALO})));if(k.status==="fulfilled")trips.push(...k.value.filter(x=>valid(x,f,t)).map(x=>({...x,chaloTrackingUrl:CHALO})));if(p.status==="fulfilled")trips.push(...p.value.filter(x=>valid(x,f,t)).map(x=>({...x,chaloTrackingUrl:CHALO})));const seen=new Set<string>();const directJourneys=dedupe(trips).map(x=>journey(x,f,t)).filter((x):x is Journey=>!!x).filter(j=>{const x=j.segments[0].trip,k=`${x.vehicleNumber??""}|${j.departureTime}|${j.arrivalTime}`;if(seen.has(k))return false;seen.add(k);return true;}).sort((a,b)=>(a.isPast?1:0)-(b.isPast?1:0)||mins(a.departureTime)-mins(b.departureTime));return{from:f,to:t,directJourneys,connectingJourneys:[],searchedAt:new Date().toISOString()};}
+export async function searchVerifiedTransport(from:string,to:string):Promise<TransportSearchResult>{const f=resolveStopName(from),t=resolveStopName(to);const [e, k, p] = await Promise.allSettled([
+    process.env.ENABLE_SCRAPED_SOURCES === "true" ? getEvidebusTrips(f, t) : Promise.resolve([]),
+    getKsrtcTrips(f, t),
+    privateTrips(f, t),
+  ]);const trips:TransportTrip[]=[];if(e.status==="fulfilled")trips.push(...e.value.filter(x=>valid(x,f,t)).map(x=>({...x,chaloTrackingUrl:CHALO})));if(k.status==="fulfilled")trips.push(...k.value.filter(x=>valid(x,f,t)).map(x=>({...x,chaloTrackingUrl:CHALO})));if(p.status==="fulfilled")trips.push(...p.value.filter(x=>valid(x,f,t)).map(x=>({...x,chaloTrackingUrl:CHALO})));const seen=new Set<string>();const directJourneys=dedupe(trips).map(x=>journey(x,f,t)).filter((x):x is Journey=>!!x).filter(j=>{const x=j.segments[0].trip,k=`${x.vehicleNumber??""}|${j.departureTime}|${j.arrivalTime}`;if(seen.has(k))return false;seen.add(k);return true;}).sort((a,b)=>(a.isPast?1:0)-(b.isPast?1:0)||mins(a.departureTime)-mins(b.departureTime));return{from:f,to:t,directJourneys,connectingJourneys:[],searchedAt:new Date().toISOString()};}
