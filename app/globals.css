@@ -2279,3 +2279,24 @@ html.dark-theme .result-route { background:#202d36; }
 
 .report-link { display:inline-flex; min-height:44px; align-items:center; margin-top:7px; color:var(--go-primary); font-size:12px; font-weight:700; text-decoration:underline; text-underline-offset:3px; }
 .sources-page .eyebrow,.offline-page .eyebrow { color:var(--go-primary); font-weight:800; letter-spacing:.14em; font-size:11px; }
+
+
+/* Saved routes and search controls */
+.saved-routes-card { padding:18px 20px; }
+.saved-route-columns { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; }
+.saved-route-columns h3 { display:flex; align-items:center; gap:8px; margin:0 0 10px; font-size:13px; }
+.saved-route-list { display:grid; gap:7px; }
+.saved-route-list button { min-height:40px; border:1px solid var(--go-line); border-radius:8px; background:var(--go-paper); color:var(--go-ink); padding:8px 10px; text-align:left; font-size:12px; font-weight:650; }
+.saved-route-list button span { color:var(--go-muted); padding:0 4px; }
+.saved-route-row { display:flex; gap:6px; }
+.saved-route-row > button:first-child { flex:1; min-width:0; }
+.saved-route-list .remove-favourite { width:40px; text-align:center; font-size:18px; }
+.favourite-toggle { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:40px; border:1px solid var(--go-line); border-radius:8px; background:var(--go-paper); color:var(--go-ink); padding:0 11px; font-size:12px; font-weight:700; }
+.favourite-toggle.is-favourite { color:var(--go-primary); background:#f8eeee; border-color:#e8cdd0; }
+.result-filters { display:flex; flex-wrap:wrap; align-items:center; gap:12px; margin:12px 0 16px; color:var(--go-muted); font-size:12px; }
+.result-filters label { display:inline-flex; align-items:center; gap:7px; }
+.result-filters select { min-height:36px; border:1px solid var(--go-line); border-radius:7px; padding:0 9px; background:var(--go-paper); color:var(--go-ink); }
+.filter-empty { color:var(--go-muted); padding:12px 0; }
+@media(max-width:600px) { .saved-route-columns { grid-template-columns:1fr; gap:15px; } .favourite-toggle { order:3; } }
+html.dark-theme .saved-route-list button,html.dark-theme .favourite-toggle,html.dark-theme .result-filters select { background:#17232d; border-color:#3a4b57; color:#f2eee7; }
+html.dark-theme .favourite-toggle.is-favourite { background:#3a252b; color:#f2b8c0; border-color:#68404a; }
